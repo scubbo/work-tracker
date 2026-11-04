@@ -15,6 +15,7 @@ import uuid
 import work_activity as activity
 from .client import MAX_MESSAGE
 from .github import fetch_batch, open_inventory, review_status
+from .pr_closing import PRCloser
 from .scheduler import Scheduler, next_daily
 from .storage import SQLiteStorage, now_iso
 
@@ -41,6 +42,8 @@ class Application:
         self._validate_config(self.config)
         self.storage = storage or SQLiteStorage(self.root/"tracker.sqlite3")
         self.storage.import_legacy(self.root/"prs.json")
+        self.storage.recover_closes()
+        self.closer = PRCloser(self.storage, self.run, self.mutation_lock)
         activity.write_json(self.root/"application.json", {"version": 1})
         self.scheduler = Scheduler(self.storage, {"archive": self.archive, "refresh_prs": self.refresh_prs},
                                    self.config, activity.read_json(self.root/"checkpoints.json", {}), self.clock)
@@ -70,6 +73,7 @@ class Application:
             warning = "Account-wide count unavailable. Tracked PR refresh is independent."
         tracked = self.storage.list_prs(state=None)
         targets = sorted(value['url'] for value in tracked)
+        versions = {value['url']: value['observation_version'] for value in tracked}
         reviews_for = {value['url'] for value in tracked if value['github'].get('state', 'open').lower() == 'open'}
         for offset in range(0, len(targets), 20):
             if self.stopping.is_set():
@@ -84,14 +88,14 @@ class Application:
                 observation = observations.get(url)
                 if observation is None:
                     error = "PR refresh failed. Last observation is stale."
-                    self.storage.observation_error(url, error)
+                    self.storage.observation_error(url, error, expected_version=versions[url])
                     errors.append(f"{url}: {error}")
                     continue
                 detail, reviews = observation
                 state, reason = review_status(detail, reviews, self.config['automated_reviewers'])
                 with self.mutation_lock:
-                    self.storage.observe(url, detail, state, reason)
-                refreshed += 1
+                    applied = self.storage.observe(url, detail, state, reason, expected_version=versions[url])
+                refreshed += int(applied)
         if inventory:
             confirmed = sum(value['github'].get('state') == 'open'
                             and (value['github'].get('author') or '').casefold() == inventory['author'].casefold()
@@ -115,6 +119,7 @@ class Application:
         sources = parameters.get("sources") or ["opencode", "slack", "github"]
         if not isinstance(sources, list) or not sources or set(sources) - {"opencode", "slack", "github"}:
             raise ValueError("Invalid collection sources")
+        versions = {p['url']: p['observation_version'] for p in self.storage.list_prs(state=None)}
         manifest = activity.collect(self.root, parameters.get("until") or activity.iso(self.clock()), sources,
                                     since=parameters.get("since"), run=self.run,
                                     registry=self.storage.export_registry(), persist_registry=False)
@@ -122,7 +127,7 @@ class Application:
         github = activity.read_json(archive/"github.json", {}).get("prs", [])
         hints = activity.read_json(self.root/"correlations.json", {"creation-evidence": [], "messages": []})
         with self.mutation_lock:
-            self.storage.merge_archive(github, hints["creation-evidence"], hints["messages"])
+            self.storage.merge_archive(github, hints["creation-evidence"], hints["messages"], expected_versions=versions)
             self.mirror()
         ok = all(value["status"] == "ok" for value in manifest["sources"].values())
         return {"ok": ok, "manifest": manifest, "error": None if ok else "Collection has failed or partial sources"}
@@ -133,7 +138,8 @@ class Application:
         if method == "status":
             return {"state_directory": str(self.root), "storage": "sqlite", "pid": os.getpid(),
                     "config": self.config, "prs": len(self.storage.list_prs(state=None)),
-                    "jobs": self.storage.jobs(), "inventory": self.storage.inventory(), "github_writes": False}
+                    "jobs": self.storage.jobs(), "inventory": self.storage.inventory(), "github_writes": True,
+                    "mcp_github_writes": False, "github_write_operations": ["confirmed_pr_close"]}
         if method == "inventory":
             return self.storage.inventory()
         if method == "catalog":
@@ -159,6 +165,12 @@ class Application:
             url = activity.pr_url(params.get("url", ""))
             values = self.storage.list_prs(state=None)
             return next((value for value in values if value["url"] == url), None)
+        if method in ('close_pr', 'close_result'):
+            result = self.closer.close(params) if method == 'close_pr' else self.closer.result(params)
+            if result['status'] in ('succeeded', 'already_closed'):
+                with self.mutation_lock:
+                    self.mirror()
+            return result
         if method == "intent":
             if set(params) - {"key", "kind", "payload", "source"}:
                 raise ValueError("Unknown intent arguments")

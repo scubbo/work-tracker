@@ -56,6 +56,7 @@ A failed connection is not shown as zero PRs. Editing is disabled until reconnec
 | Enter or Details | Open full PR details |
 | `r` or Refresh GitHub | Request the application's read-only GitHub refresh, or reconnect if offline |
 | `e` or Edit | Edit local description and project/workstream classification |
+| `x` or Close PR | Open the GitHub close dialog with an optional multiline comment |
 | `n` or Track PR | Explicitly ingest an existing GitHub PR URL |
 | Links | Choose a local reference action with the mouse or keyboard |
 | `t` | Attach a Slack thread |
@@ -63,7 +64,8 @@ A failed connection is not shown as zero PRs. Editing is disabled until reconnec
 | `d` | Remove a selected local Slack link through a dialog |
 | `o` | Open the selected PR in the browser |
 | `c` or Clear filters | Clear search and filters |
-| Ctrl+Enter in a form | Save local intent |
+| Ctrl+Enter in a local metadata form | Save local intent |
+| Ctrl+Enter in Close PR | Confirm the GitHub comment and close |
 | Escape or Cancel in a form | Cancel, unless a save is still in flight |
 | `q` in the main view | Quit only the TUI |
 
@@ -71,6 +73,28 @@ Typing in input fields does not trigger single-letter application shortcuts.
 The toolbar uses shorter labels at narrow widths. Browser links are opened only
 on an explicit action and are checked for allowed HTTPS GitHub or Slack URLs.
 Agent-session references are displayed, not executed or reopened.
+
+## State age and closing
+
+The Since change column measures elapsed time in the displayed review/readiness
+state. `≥` marks the lower bound since the tracker first observed it.
+`Unknown` means earlier history is unavailable or the current observation is stale.
+The CLI also shows this age. Full details include the observed transition time.
+Ordinary polling and unrelated title, comment, or description updates do not reset it.
+
+From the PR list, press `x` to open Close PR. The selected target stays fixed even
+if the underlying list refreshes. Enter an optional multiline comment.
+Choose Close PR or press Ctrl+Enter to confirm the external GitHub operation.
+Enter alone adds a newline to the comment. Escape cancels before submission.
+This operation does not delete branches or close the linked Task.
+
+Once submitted, the dialog freezes its comment and retains one request key.
+A lost response does not authorize posting the comment again.
+Check outcome reads the recorded result or verifies closure on GitHub.
+If the original request never arrived, retry sends the identical confirmed payload.
+Reopening a pending or uncertain close resumes that request, not a new write.
+If a comment succeeded but closure remains uncertain, inspect or finish it on GitHub.
+No close operation is exposed through MCP, and scheduled jobs remain read-only.
 
 ## Local edits and agent concurrency
 

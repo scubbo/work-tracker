@@ -29,9 +29,13 @@ class Storage(Protocol):
     def apply_intent(self, key: str, kind: str, payload: dict, source: dict) -> dict: ...
     def list_prs(self, **filters) -> list: ...
     def catalog(self) -> dict: ...
-    def observe(self, url: str, github: dict, review_state: str, reason: str) -> None: ...
-    def observation_error(self, url: str, error: str) -> None: ...
-    def merge_archive(self, prs: list, evidence: list, messages: list) -> None: ...
+    def observe(self, url: str, github: dict, review_state: str, reason: str, expected_version=None) -> bool: ...
+    def observation_error(self, url: str, error: str, expected_version=None) -> None: ...
+    def merge_archive(self, prs: list, evidence: list, messages: list, expected_versions=None) -> None: ...
+    def begin_close(self, key: str, url: str, comment: str) -> tuple: ...
+    def close_request(self, key: str) -> dict: ...
+    def finish_close(self, key: str, status: str, message: str, phase: str) -> dict: ...
+    def recover_closes(self) -> None: ...
     def jobs(self) -> list: ...
     def save_job(self, name: str, value: dict) -> None: ...
     def inventory(self) -> dict | None: ...
@@ -45,7 +49,7 @@ class SQLiteStorage:
         self.path.parent.chmod(0o700)
         with self._connection() as db:
             version = db.execute("PRAGMA user_version").fetchone()[0]
-            if version not in (0, 1, 2):
+            if version not in (0, 1, 2, 3):
                 raise ValueError(f"Unsupported database schema {version}; refusing to change it")
             db.execute("PRAGMA journal_mode=WAL")
             db.executescript("""
@@ -75,9 +79,17 @@ class SQLiteStorage:
                 CREATE TABLE IF NOT EXISTS jobs(name TEXT PRIMARY KEY, value TEXT NOT NULL);
                 CREATE TABLE IF NOT EXISTS untracked_cache(
                     url TEXT PRIMARY KEY, snapshot TEXT NOT NULL, cached_at TEXT NOT NULL);
-                PRAGMA user_version=2;
-                COMMIT;
+                CREATE TABLE IF NOT EXISTS pr_close_requests(
+                    key TEXT PRIMARY KEY, url TEXT NOT NULL REFERENCES prs(url), comment TEXT NOT NULL,
+                    status TEXT NOT NULL, message TEXT NOT NULL, phase TEXT NOT NULL,
+                    created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
             """)
+            columns = {row[1] for row in db.execute('PRAGMA table_info(prs)')}
+            for name, definition in (('state_changed_at', 'TEXT'), ('state_first_seen_at', 'TEXT'),
+                                     ('observation_version', 'INTEGER NOT NULL DEFAULT 0')):
+                if name not in columns:
+                    db.execute(f'ALTER TABLE prs ADD COLUMN {name} {definition}')
+            db.execute('PRAGMA user_version=3')
             self._workstream(db, UNCLASSIFIED, UNCLASSIFIED)
             db.commit()
 
@@ -289,6 +301,8 @@ class SQLiteStorage:
                               "JOIN workstreams ON workstreams.id=tasks.workstream_id "
                               "JOIN projects ON projects.id=workstreams.project_id ORDER BY prs.url").fetchall()
             result = []
+            pending_closes = {r['url']: dict(r) for r in db.execute(
+                "SELECT * FROM pr_close_requests WHERE status IN ('running','uncertain')")}
             for row in rows:
                 value = registry[row["url"]]
                 github = value["github"]
@@ -302,7 +316,10 @@ class SQLiteStorage:
                               "project_name": row["project_name"], "workstream_name": row["workstream_name"],
                               "review_state": "Blocked" if row["refresh_error"] else row["review_state"],
                               "review_reason": row["refresh_error"] or row["reason"], "observed_at": row["observed_at"],
-                              "refresh_error": row["refresh_error"]})
+                              "refresh_error": row["refresh_error"], "observation_version": row['observation_version'],
+                              "close_request": pending_closes.get(row['url']),
+                              "state_changed_at": None if row['refresh_error'] else row['state_changed_at'],
+                              "state_first_seen_at": None if row['refresh_error'] else row['state_first_seen_at']})
                 searchable = [value.get('url'), value.get('description'), github.get('title'),
                               value['task_title'], value['project_name'], value['workstream_name'],
                               value['slack-threads'], value['agent-sessions']]
@@ -311,26 +328,89 @@ class SQLiteStorage:
                 result.append(value)
             return result
 
-    def observe(self, url, github, review_state, reason):
+    def observe(self, url, github, review_state, reason, expected_version=None):
         with self._transaction() as db:
-            # Observation is not ingestion. Unknown PRs must be explicitly enrolled elsewhere.
-            db.execute("UPDATE prs SET github=?,review_state=?,reason=?,observed_at=?,refresh_error=NULL WHERE url=?",
-                       (encoded(github), review_state, reason, now_iso(), url))
+            row = db.execute('SELECT * FROM prs WHERE url=?', (url,)).fetchone()
+            if row is None or expected_version is not None and row['observation_version'] != expected_version:
+                return False
+            previous = json.loads(row['github'])
+            changed = (row['review_state'], previous.get('state')) != (review_state, github.get('state'))
+            now = now_iso()
+            first = now if changed or not row['state_first_seen_at'] else row['state_first_seen_at']
+            transition = now if changed and row['observed_at'] else (None if changed else row['state_changed_at'])
+            db.execute('UPDATE prs SET github=?,review_state=?,reason=?,observed_at=?,refresh_error=NULL, '
+                       'state_changed_at=?,state_first_seen_at=?,observation_version=observation_version+1 WHERE url=?',
+                       (encoded(github), review_state, reason, now, transition, first, url))
+            return True
 
-    def observation_error(self, url, error):
+    def observation_error(self, url, error, expected_version=None):
         with self._transaction() as db:
-            db.execute("UPDATE prs SET refresh_error=? WHERE url=?", (error, url))
+            db.execute('UPDATE prs SET refresh_error=? WHERE url=? AND (? IS NULL OR observation_version=?)',
+                       (error, url, expected_version, expected_version))
 
-    def merge_archive(self, prs, evidence, messages):
+    def merge_archive(self, prs, evidence, messages, expected_versions=None):
         with self._transaction() as db:
             registry = self._registry(db)
+            previous = {url: record['github'] for url, record in registry.items()}
+            versions = {row['url']: row['observation_version'] for row in db.execute('SELECT url,observation_version FROM prs')}
             activity.merge_prs(registry, prs, evidence, messages)
             for url, record in registry.items():
                 self._ensure_pr(db, url, record)
-                # Only merge automatic fields. Current curated fields came from this transaction.
-                curated = {key: value for key, value in record.items() if key != "github"}
-                db.execute("UPDATE prs SET metadata=?,github=? WHERE url=?",
-                           (encoded(curated), encoded(record.get("github", {})), url))
+                if expected_versions is not None and url in versions and versions[url] != expected_versions.get(url):
+                    record['github'] = previous[url]
+                old = previous.get(url, {})
+                github = record.get('github', {})
+                lifecycle_changed = old.get('state') != github.get('state')
+                curated = {key: value for key, value in record.items() if key != 'github'}
+                db.execute('UPDATE prs SET metadata=?,github=?,observation_version=observation_version+?, '
+                           'state_changed_at=CASE WHEN ? THEN NULL ELSE state_changed_at END, '
+                           'state_first_seen_at=CASE WHEN ? THEN NULL ELSE state_first_seen_at END, '
+                           'observed_at=CASE WHEN ? THEN NULL ELSE observed_at END WHERE url=?',
+                           (encoded(curated), encoded(github), int(old != github), lifecycle_changed,
+                            lifecycle_changed, lifecycle_changed, url))
+
+    def begin_close(self, key, url, comment):
+        if not isinstance(key, str) or not key or len(key) > 200:
+            raise ValueError('A close-request key of 1 to 200 characters is required')
+        activity.pr_url(url)
+        if not isinstance(comment, str) or len(comment) > 65536 or '\0' in comment:
+            raise ValueError('The close comment must be text under 65,537 characters without null bytes')
+        with self._transaction() as db:
+            old = db.execute('SELECT * FROM pr_close_requests WHERE key=?', (key,)).fetchone()
+            if old:
+                if (old['url'], old['comment']) != (url, comment):
+                    raise ValueError('Close-request key was already used for different content')
+                return dict(old), False
+            if not db.execute('SELECT 1 FROM prs WHERE url=?', (url,)).fetchone():
+                raise ValueError('Only an ingested PR can be closed')
+            if db.execute("SELECT 1 FROM pr_close_requests WHERE url=? AND status IN ('running','uncertain')", (url,)).fetchone():
+                raise ValueError('A previous close request is pending or uncertain. Check its outcome on GitHub first.')
+            now = now_iso()
+            db.execute('INSERT INTO pr_close_requests VALUES(?,?,?,?,?,?,?,?)',
+                       (key, url, comment, 'running', 'Checking the current GitHub PR state', 'preflight', now, now))
+            return dict(db.execute('SELECT * FROM pr_close_requests WHERE key=?', (key,)).fetchone()), True
+
+    def close_request(self, key):
+        if not isinstance(key, str) or not key:
+            raise ValueError('A close-request key is required')
+        with self._connection(read=True) as db:
+            row = db.execute('SELECT * FROM pr_close_requests WHERE key=?', (key,)).fetchone()
+            if row is None:
+                raise ValueError('Close request not found')
+            return dict(row)
+
+    def finish_close(self, key, status, message, phase):
+        if status not in ('running', 'succeeded', 'already_closed', 'failed', 'uncertain'):
+            raise ValueError('Invalid close-request status')
+        with self._transaction() as db:
+            db.execute('UPDATE pr_close_requests SET status=?,message=?,phase=?,updated_at=? WHERE key=?',
+                       (status, message, phase, now_iso(), key))
+            return dict(db.execute('SELECT * FROM pr_close_requests WHERE key=?', (key,)).fetchone())
+
+    def recover_closes(self):
+        with self._transaction() as db:
+            db.execute("UPDATE pr_close_requests SET status='uncertain',message=?,updated_at=? WHERE status='running'",
+                       ('Application restarted during this request. Check GitHub before another close. No write will be replayed.', now_iso()))
 
     def inventory(self):
         with self._connection(read=True) as db:

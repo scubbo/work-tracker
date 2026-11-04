@@ -25,7 +25,9 @@ No existing agent configuration is changed automatically.
 
 Agent calls record local intent, with an idempotency key and source label.
 Intent never establishes approval, CI success, merge state, or GitHub authorship.
-The application accepts no arbitrary shell commands or GitHub write operations.
+The application accepts no arbitrary shell commands. A separate confirmed-close
+operation posts an optional comment and closes one ingested PR on GitHub.
+No MCP tool exposes this operation, and local intents cannot request it.
 A failed connection is not permission to create a second local database.
 
 ## Private files
@@ -54,6 +56,27 @@ PR. The one-time correction retains original enrollments, all explicit intents,
 and any record with evidence of local customization. It preserves cached rows
 verbatim and takes a private database backup before changing the active set. Migration does not delete old snapshots or change retention.
 Do not edit `prs.json` after migration; submit intent through an interface.
+
+## State timing and explicit PR closing
+
+Schema 3 adds state timing, observation versions, and a private close-request ledger.
+The first timed observation provides a lower bound. A later observed review or
+lifecycle transition sets the change time. Repeated observations and reason-only
+changes keep that time. Refresh failures hide the age without inventing a change.
+Timing reflects local observations, not an exact reconstructed GitHub timeline.
+
+The application persists a confirmed close request before any external write.
+It checks that the PR is ingested and still open, posts a nonblank comment,
+then closes the PR. It does not delete branches or close the linked Task.
+If a response is lost, the same request key returns its recorded outcome.
+A comment can succeed even if the later close fails. Such outcomes are uncertain
+and are never replayed automatically. Interrupted requests remain uncertain after
+restart. Reopening the dialog retains its key and comment for a read-only check.
+If the outcome remains uncertain, inspect or finish the close on GitHub.
+
+Observation versions prevent an older refresh or archive from overwriting facts
+that a concurrent close already updated. Ordinary jobs remain read-only and can
+retry. Close requests are not scheduled jobs and never enter that retry loop.
 
 ## Scheduling
 

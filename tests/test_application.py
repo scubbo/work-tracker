@@ -312,7 +312,8 @@ class ApplicationTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             app = Application(Path(tmp))
             self.assertEqual(app.dispatch('configure', {'archive_hour': 11})['archive_hour'], 11)
-            self.assertFalse(app.dispatch('status', {})['github_writes'])
+            self.assertTrue(app.dispatch('status', {})['github_writes'])
+            self.assertFalse(app.dispatch('status', {})['mcp_github_writes'])
             for method, params in [('github_create', {}), ('refresh', {'shell': 'gh pr merge'})]:
                 with self.assertRaises(ValueError):
                     app.dispatch(method, params)

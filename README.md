@@ -8,7 +8,9 @@ management views remain follow-ups.
 
 The first slice refreshes only PRs already ingested into the tracker. It supports
 review/readiness status, local agent intent, project/workstream classification,
-Slack links, and multiple agent-session references. GitHub access is read-only. MCP cannot create or modify GitHub PRs.
+Slack links, and multiple agent-session references. Collection and refresh are
+read-only. The TUI also offers an explicitly confirmed PR close with an optional
+comment. MCP cannot create or modify GitHub PRs.
 
 Read [the interview decisions](docs/requirements.md) for the full planned scope.
 Read [the runtime guide](docs/application.md) for ownership and operational details.
@@ -98,6 +100,15 @@ New names remain allowed.
 Press `r` to request a GitHub refresh in the background application.
 The TUI's three-second view poll only reads local data.
 Closing it leaves the application and scheduled jobs running.
+
+The Since change column shows elapsed time in the displayed review/readiness
+state. `≥` marks a lower bound since tracking began. Unknown history or stale
+observations show `Unknown`. Ordinary refreshes do not reset the clock.
+
+Press `x` on the selected PR to open Close PR. Enter an optional multiline
+comment, then choose Close PR or press Ctrl+Enter to confirm the GitHub change.
+Escape cancels before submission. Branches and the linked Task stay unchanged.
+An uncertain request is not replayed. Reopen its dialog to check the same request.
 
 See [the TUI guide](docs/tui.md) for controls, retry/conflict handling, and limits.
 

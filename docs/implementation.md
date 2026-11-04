@@ -128,6 +128,29 @@ The installer passed and preserved tracked-record count and job configuration.
 A read-only installed-editor smoke test against the live application verified
 Right Arrow completion without submitting a save or stopping the background app.
 
+## State timing and Close PR checkpoint
+
+Jack requested elapsed time since state changes and a one-key Close PR dialog
+with a comment box. The list and CLI now display an observed state age.
+First tracking gives a lower bound, not a reconstructed GitHub event time.
+Ordinary refreshes preserve the timestamp, while stale observations hide the age.
+
+The `x` shortcut opens an immutable-target confirmation dialog with an optional
+multiline comment. The application owns the GitHub operation. It records each
+request before sending a comment or close, and never replays uncertain writes.
+A reopened pending dialog retains the original key and comment.
+Branches and linked Tasks stay unchanged. No MCP write tool was added.
+
+The complete suite passed 117 tests, exit 0. Focused checks covered state timing,
+schema migration, duplicate requests, interrupted operations, keyboard routing,
+lost responses, cancellation, immutable targets, and small-terminal layout.
+A private-copy migration preserved every old table row and field.
+A private SQLite backup was taken before installation. Installation preserved
+tracked records and schedule configuration, with installed code matching source.
+A live read-only refresh initialized the timing anchors.
+The installed TUI displayed the new column and opened/cancelled Close PR under a
+read-only RPC guard. No real GitHub comment or close was performed for testing.
+
 ## Remaining work
 
 The first Open PR TUI is implemented in Textual, backed by the same local

@@ -7,6 +7,7 @@ import sys
 import uuid
 
 from .client import default_state, request, wait_for_job
+from .state_age import state_age
 
 
 def terminal_text(value):
@@ -92,7 +93,7 @@ def main(argv=None):
                     if inventory.get('error'):
                         print(terminal_text(f"Inventory warning: {inventory['error']}"))
                 for value in result["items"]:
-                    print('\n' + terminal_text(f"{value['review_state']} | {value['github'].get('title') or value['task_title']}"))
+                    print('\n' + terminal_text(f"{value['review_state']} | Since change: {state_age(value)} | {value['github'].get('title') or value['task_title']}"))
                     print(terminal_text(value["url"]))
                     print(terminal_text(f"{value['project_name']} / {value['workstream_name']} | {value['review_reason']}"))
                 return 0

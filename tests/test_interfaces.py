@@ -101,6 +101,9 @@ class InterfaceTests(unittest.TestCase):
                 names = {tool.name for tool in tools.tools}
                 self.assertIn('submit_pr', names)
                 self.assertNotIn('create_github_pr', names)
+                self.assertNotIn('close_pr', names)
+                self.assertNotIn('close_result', names)
+                self.assertEqual(len(names), 8)
                 payload = {'url': PR, 'intent_key': 'from-agent', 'description': 'Why this matters'}
                 result = await client.call_tool('submit_pr', payload)
                 self.assertFalse(result.is_error, result.content)

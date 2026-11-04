@@ -19,6 +19,8 @@ from textual.widgets import Button, DataTable, Footer, Header, Input, Select, St
 import work_activity as activity
 from .client import request
 from .tui_forms import IntentForm
+from .tui_close import ClosePRScreen
+from .state_age import state_age
 
 
 REVIEW_STATES = ("Ready to Merge", "Changes requested", "Blocked", "Awaiting review")
@@ -54,6 +56,9 @@ def detail_text(record):
     state = record.get('review_state', 'Awaiting review')
     text.append(state + '\n', style=COLORS.get(state, 'white'))
     text.append(plain(record.get('review_reason') or 'No current GitHub observation') + '\n\n')
+    section('Time since state change', state_age(record) + '\n' +
+            ('Change first observed: ' + record['state_changed_at'] if record.get('state_changed_at') else
+             '≥ means at least this long since first tracking this state; older history is unknown.'))
     section('GitHub observation', record.get('observed_at') or 'Unverified. Request a background refresh.')
     if record.get('refresh_error'):
         section('Stale observation', record['refresh_error'])
@@ -180,7 +185,7 @@ class WorkTrackerApp(App):
                 Binding('r', 'refresh_prs', 'Refresh GitHub'), Binding('e', 'edit', 'Edit'),
                 Binding('n', 'register', 'Track PR'), Binding('t', 'slack', 'Slack link', show=False),
                 Binding('s', 'session', 'Agent session', show=False), Binding('d', 'remove_slack', 'Unlink Slack', show=False),
-                Binding('o', 'open_pr', 'Open PR', show=False),
+                Binding('o', 'open_pr', 'Open PR', show=False), Binding('x', 'close_pr', 'Close PR'),
                 Binding('c', 'clear_filters', 'Clear filters', show=False), Binding('escape', 'table', 'PR list', show=False)]
     CSS = """
     Screen { background: $background; }
@@ -191,11 +196,11 @@ class WorkTrackerApp(App):
     #toolbar Button { min-width: 8; width: auto; margin-right: 1; }
     #filters { height: 3; grid-size: 4; grid-columns: 2fr 1fr 1fr 1fr; grid-gutter: 0 1; padding: 0 1; }
     #body { height: 1fr; padding: 0 1; }
-    #list-pane { width: 55%; height: 1fr; }
+    #list-pane { width: 65%; height: 1fr; }
     #list-count { height: 1; color: $text-muted; }
     #prs { height: 1fr; border: round $primary; }
     #empty { height: auto; max-height: 4; padding: 0 1; color: $text-muted; }
-    #preview { width: 45%; height: 1fr; border: round $primary; margin-left: 1; padding: 0 1; }
+    #preview { width: 35%; height: 1fr; border: round $primary; margin-left: 1; padding: 0 1; }
     #preview-title { text-style: bold; height: 1; color: $accent; }
     #preview-content { height: 1fr; }
     Screen.narrow #preview { display: none; }
@@ -232,6 +237,7 @@ class WorkTrackerApp(App):
             yield Button('Track PR', id='track-pr', variant='primary')
             yield Button('Refresh GitHub', id='refresh-prs')
             yield Button('Edit', id='edit-pr')
+            yield Button('Close PR', id='close-pr', variant='warning')
             yield Button('Details', id='details-pr')
             yield Button('Links', id='manage-links')
             yield Button('Clear filters', id='clear-filters')
@@ -259,6 +265,7 @@ class WorkTrackerApp(App):
         table.add_column('Review', key='review', width=18)
         table.add_column('PR', key='pr', width=20)
         self.title_column = table.add_column('Title', key='title', width=30)
+        table.add_column('Since change', key='state-age', width=12)
         table.focus()
         self._layout()
         self.request_load()
@@ -271,16 +278,19 @@ class WorkTrackerApp(App):
     def _layout(self, width=None):
         width = self.size.width if width is None else width
         for screen in self.screen_stack:
-            screen.set_class(width < 110, 'narrow')
+            screen.set_class(width < 120, 'narrow')
         if self._main:
-            self._main.query_one('#refresh-prs', Button).label = 'Refresh' if width < 110 else 'Refresh GitHub'
-            self._main.query_one('#clear-filters', Button).label = 'Clear' if width < 110 else 'Clear filters'
+            for name, compact, full in (('refresh-prs', 'Refresh', 'Refresh GitHub'),
+                                        ('clear-filters', 'Clear', 'Clear filters'),
+                                        ('track-pr', 'Track', 'Track PR'), ('close-pr', 'Close', 'Close PR'),
+                                        ('open-inventory', 'Totals', 'Inventory')):
+                self._main.query_one('#'+name, Button).label = compact if width < 120 else full
             self.call_after_refresh(self._resize_columns)
 
     def _resize_columns(self):
         table = self._main.query_one('#prs', DataTable)
         if self.title_column in table.columns:
-            table.columns[self.title_column].width = max(16, table.size.width - 46)
+            table.columns[self.title_column].width = max(16, table.size.width - 60)
             table.refresh(layout=True)
 
     async def call_api(self, method, params=None):
@@ -382,7 +392,7 @@ class WorkTrackerApp(App):
                 short = f'{parts[1]} #{parts[-1]}' if len(parts) >= 4 else record['url']
                 title = record.get('github', {}).get('title') or record.get('task_title') or record['url']
                 table.add_row(Text(plain(state), style=COLORS.get(state, 'white')), Text(plain(short)[:60]),
-                              Text(plain(title)[:180]), key=record['url'])
+                              Text(plain(title)[:180]), Text(state_age(record), style='dim'), key=record['url'])
             selected = next((index for index, value in enumerate(self.visible_rows) if value['url'] == previous), 0)
             self.selected_url = self.visible_rows[selected]['url'] if self.visible_rows else None
             if self.visible_rows:
@@ -427,6 +437,7 @@ class WorkTrackerApp(App):
         self._main.query_one('#track-pr', Button).disabled = not self.connected
         self._main.query_one('#edit-pr', Button).disabled = not self.connected or self.selected_record is None
         self._main.query_one('#details-pr', Button).disabled = self.selected_record is None
+        self._main.query_one('#close-pr', Button).disabled = not self.connected or self.selected_record is None
         self._main.query_one('#manage-links', Button).disabled = not self.connected or self.selected_record is None
         self._main.query_one('#refresh-prs', Button).disabled = self._refresh_requesting
         self._main.query_one('#open-inventory', Button).disabled = not (self.inventory or {}).get('github_url')
@@ -470,7 +481,8 @@ class WorkTrackerApp(App):
     @on(Button.Pressed)
     def button_pressed(self, event):
         actions = {'track-pr': self.action_register, 'refresh-prs': self.action_refresh_prs,
-                   'edit-pr': self.action_edit, 'details-pr': self.action_details, 'manage-links': self.action_links,
+                   'edit-pr': self.action_edit, 'close-pr': self.action_close_pr,
+                   'details-pr': self.action_details, 'manage-links': self.action_links,
                    'clear-filters': self.action_clear_filters, 'open-inventory': self.action_inventory}
         action = actions.get(event.button.id)
         if action:
@@ -478,7 +490,7 @@ class WorkTrackerApp(App):
             action()
 
     def check_action(self, action, parameters):
-        if len(self.screen_stack) > 1 and action in {'quit', 'search', 'refresh_prs', 'edit', 'register', 'slack', 'session', 'remove_slack', 'links', 'open_pr', 'clear_filters', 'table'}:
+        if len(self.screen_stack) > 1 and action in {'quit', 'search', 'refresh_prs', 'edit', 'register', 'slack', 'session', 'remove_slack', 'links', 'open_pr', 'clear_filters', 'table', 'close_pr'}:
             return False
         return True
 
@@ -532,6 +544,16 @@ class WorkTrackerApp(App):
         url = (self.inventory or {}).get('github_url')
         if url:
             self.open_reference(url, 'inventory')
+
+    def action_close_pr(self):
+        if self.connected and self.selected_record and len(self.screen_stack) == 1:
+            self.push_screen(ClosePRScreen(self.selected_record), self._close_pr_finished)
+
+    def _close_pr_finished(self, result):
+        if result:
+            self.notify(plain(result['message']), markup=False)
+        self.request_load()
+        self._layout()
 
     def action_links(self):
         if self.connected and self.selected_record:

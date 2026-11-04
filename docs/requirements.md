@@ -82,13 +82,25 @@ PRs can be filtered by project and workstream. Views are searchable and link to
 related tracker records.
 
 The TUI supports local edits, not just browsing. It can manage the hierarchy,
-tasks, classification, links, and My Day. This does not approve GitHub mutations
-or Slack posting from the TUI.
+tasks, classification, links, and My Day. Jack subsequently requested a Close PR
+dialog with a comment box. This permits an explicitly confirmed close and comment
+on GitHub. It does not permit other GitHub mutations or Slack posting from the TUI.
+MCP remains local-intent only.
 
 Search initially covers tracker names, descriptions, notes, and stored links.
 Search of full Slack messages and agent conversations is a follow-up.
 
 ## PR state and refresh
+
+The PR list includes elapsed time since the displayed state changed.
+Track observations durably, without treating unrelated GitHub updates as changes.
+Unknown earlier history remains unknown. First tracking gives a lower bound.
+
+The `x` shortcut opens Close PR for the selected record. The dialog has an
+optional multiline close comment and explicit confirmation. The application
+executes the operation, not the TUI. Branches and Tasks stay unchanged.
+A persistent request key prevents comment duplication after a lost response.
+Uncertain writes are not automatically retried, including after a restart.
 
 Keep Awaiting review, Changes requested, Ready to Merge, and Blocked distinct.
 Ready to Merge replaces the earlier proposed Approved label.

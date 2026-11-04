@@ -19,6 +19,12 @@ The first Open PR TUI is implemented in `work_tracker/tui.py` and `tui_forms.py`
 My Day and standalone project/workstream management views remain follow-ups.
 Do not implement a remote backend without the relevant discussion.
 
+Jack later requested elapsed time since state changes and a Close PR dialog.
+The TUI can request a GitHub close with an optional comment only after explicit
+confirmation. MCP remains intent-only and must expose no GitHub write tool.
+Do not perform a live close as a verification step without a specific PR request.
+Never automatically retry an uncertain external write or delete a branch.
+
 The TUI must stay a client: use the private application API, never SQLite or
 external service commands. Its periodic timer only reloads local views.
 Metadata editors must send changed fields only and use atomic edit preconditions
