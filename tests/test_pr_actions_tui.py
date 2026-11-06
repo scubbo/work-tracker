@@ -69,7 +69,7 @@ class PRActionTUITests(unittest.IsolatedAsyncioTestCase):
         async with app.run_test(size=(140, 40)) as pilot:
             await self.settle(app, pilot)
             table = app.query_one('#prs', DataTable)
-            self.assertEqual(len(table.columns), 4)
+            self.assertEqual(len(table.columns), 5)
             self.assertTrue(table.get_row_at(0)[3].plain.startswith('2h'))
             self.assertEqual(table.get_row_at(1)[3].plain, 'Unknown')
             self.assertFalse(any(method == 'close_pr' for method, params in api.calls))

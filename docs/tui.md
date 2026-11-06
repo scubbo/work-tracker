@@ -29,6 +29,15 @@ filtering, so search does not silently stop at the first 200 records.
 Search covers names, local descriptions, legacy project labels, and stored links.
 It does not search archived messages, agent transcripts, or raw PR-body text.
 
+Opened displays the GitHub creation date in UTC as `YYYY-MM-DD`.
+Full details include the complete timestamp. Missing or invalid timestamps show
+`Unknown` rather than a date inferred from another field.
+
+Titles and opening timestamps are stored in the private SQLite datastore.
+The interface reads them through the local application, including after a restart.
+GitHub refresh failures retain the last known metadata with a stale warning.
+Displaying this column makes no additional GitHub requests.
+
 Filter by project, workstream, or the four review states.
 The table keeps its selected PR across local reloads when that PR remains visible.
 On a wide terminal, the detail pane follows the selection. On a narrow terminal,
@@ -57,22 +66,98 @@ A failed connection is not shown as zero PRs. Editing is disabled until reconnec
 | `r` or Refresh GitHub | Request the application's read-only GitHub refresh, or reconnect if offline |
 | `e` or Edit | Edit local description and project/workstream classification |
 | `x` or Close PR | Open the GitHub close dialog with an optional multiline comment |
+| `m` | Open merge confirmation for the selected PR |
 | `n` or Track PR | Explicitly ingest an existing GitHub PR URL |
 | Links | Choose a local reference action with the mouse or keyboard |
 | `t` | Attach a Slack thread |
-| `s` | Attach an agent-session reference |
+| `s` | View saved sessions and resume actions, with an explicit Add session reference button |
 | `d` | Remove a selected local Slack link through a dialog |
 | `o` | Open the selected PR in the browser |
+| `p` | Copy the selected PR URL |
+| F2 | Choose the sort column and direction |
+| F3 | View daily PR statistics overall or by project |
+| Click a column header | Sort by that column, or reverse its current order |
 | `c` or Clear filters | Clear search and filters |
 | Ctrl+Enter in a local metadata form | Save local intent |
 | Ctrl+Enter in Close PR | Confirm the GitHub comment and close |
+| Ctrl+Enter in Merge PR | Confirm the previewed head commit and selected merge method |
 | Escape or Cancel in a form | Cancel, unless a save is still in flight |
 | `q` in the main view | Quit only the TUI |
 
 Typing in input fields does not trigger single-letter application shortcuts.
 The toolbar uses shorter labels at narrow widths. Browser links are opened only
 on an explicit action and are checked for allowed HTTPS GitHub or Slack URLs.
-Agent-session references are displayed, not executed or reopened.
+Session controls can focus a verified existing herdr pane. They never execute stored shell text or start another conversation.
+
+## Sorting and copying
+
+The default sort is the full PR URL, ascending, including the PR number as text.
+Click a column header to choose it. Click the active header again to reverse direction.
+F2 opens a keyboard-accessible chooser. The active header shows an arrow.
+Dates use their full timestamps, not their displayed strings. Unknown dates stay last in both directions.
+Time since state change uses elapsed time, including the recorded lower bounds.
+Review priority follows Ready to Merge, Changes requested, Blocked, then Awaiting review.
+URL order breaks ties. The selected PR stays selected when its row moves.
+Filters and refreshes retain the sort. Header clicks and F2 choices save the column and direction in the local application.
+A fresh TUI restores that choice, including after the backend restarts. Filters still start clear.
+The preference belongs to the selected application state directory. Existing windows retain their own current order.
+Rapid changes save in sequence, with the latest choice last. Normal `q` exit waits for an in-flight save.
+If saving fails, the local order remains active. The TUI warns and retries after reconnection.
+It never writes a separate settings file or opens SQLite directly.
+
+Press `p` from the list to copy the selected PR URL. Cached offline rows also support copying.
+Typing `p` in a text field does not copy. macOS uses `pbcopy` through standard input, without a shell.
+Other platforms use the terminal clipboard protocol and require terminal support.
+
+## Daily statistics
+
+F3 opens saved daily history. Choose a project or Overall and all projects to compare the series.
+Unallocated is the default project bucket, including when its count is zero. The underlying Unclassified hierarchy stays unchanged.
+The range selector covers 7, 30, 90, or 365 days. Scroll the table sideways to see every metric.
+The view reads the application API only. Reload reads saved history without starting GitHub collection.
+
+Tracked counts include all enrolled PRs, not the account-wide untracked estimate.
+Closed counts exclude merges. Mean and p90 measure GitHub opening to the latest observed closure for each PR that day.
+P90 uses nearest rank. Empty closure cohorts show no duration, and Timed/all shows timestamp coverage.
+Stale and Missing O/C identify failed observations and missing opening/closing dates. Counts `>=` are known lower bounds.
+An oldest-open age `>=` is a lower bound when opening dates are missing. JSON also includes unknown-state counts.
+
+An asterisk marks today's provisional rows. Inventory and project assignment for past snapshots do not change when a PR is reclassified later.
+Late closure observations can correct older closure metrics within their recorded membership.
+The history notice identifies missing calendar days. Missing snapshots are not zero activity or an invented backfill.
+If the application is offline, previously displayed rows stay visible. The TUI does not create its own statistics datastore.
+
+## Session references and resume commands
+
+PR registration, reference attachment, and resume availability are separate outcomes.
+Press `s` to open the saved-session view. It shows each tool, workspace, session ID, machine, and action status.
+Opening the view only reads saved data. It retains the selected PR while local data refreshes.
+Choose `Add session reference` to open a separate attachment form. Existing sessions are not replaced.
+The view retains cached identity if the application is offline. Adding a reference requires a connection.
+Enter opens full PR details, which also expose session actions.
+
+Choose `Activate open herdr pane` to search running local herdr sessions and focus a verified existing pane.
+The application requires the recorded machine, workspace, tool, and exact session ID. It never starts another agent.
+Herdr must report the session ID, or fx must hold its exact session files open in a foreground process.
+The fx fallback requires `lsof` and the default `~/.fx` profile. Titles and working directories alone never identify a session.
+The macOS installer includes `/usr/sbin` in the application's `PATH` so it can find `lsof`.
+If that dependency is missing, the application reports an inspection failure rather than an absent pane.
+If several panes match, no pane is activated. If no pane matches or inspection fails, use the separate copy-resume button.
+This action changes the selected pane inside herdr. It does not select an internal fx instance or bring another terminal window forward.
+Choose `Check and copy resume command` to verify the saved session and copy its command.
+The application uses a native read-only lookup. It does not open a conversation or send a model request.
+Paste the copied command into your terminal to resume in the recorded workspace.
+
+The fx adapter uses `fx --resume SESSION_ID`. The OpenCode adapter uses `opencode --session SESSION_ID`.
+Both require complete identity and a confirmed saved session. OpenCode also checks its recorded workspace against the native response.
+References on another machine show `Copy command for recorded machine`. That action copies instructions only and does not check remote availability.
+Unsupported tools, incomplete identity, missing workspaces, and failed lookups do not report a usable local link.
+The application derives commands from explicit adapters. It ignores stored shell commands and does not invent URI schemes.
+
+The CLI equivalent is `work-tracker sessions PR_URL --verify`.
+MCP callers use `get_pr(url, verify_sessions=True)` and inspect `agent-session-actions` separately from `agent-sessions`.
+Legacy OpenCode `source-session` metadata stays intact. Session references and actions do not prove PR authorship.
+Native verification is cached for five minutes in the running application. Clicking the copy action checks again.
 
 ## State age and closing
 

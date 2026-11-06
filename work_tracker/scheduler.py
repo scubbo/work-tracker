@@ -25,6 +25,14 @@ def next_daily(now, hour=10, minute=0):
     return activity.iso(due)
 
 
+def daily_schedule(name, config):
+    if name == 'archive':
+        return config['archive_hour'], config['archive_minute']
+    if name == 'daily_stats':
+        return 0, 5
+    return None
+
+
 class Scheduler:
     def __init__(self, storage, callbacks, config, checkpoints=None, clock=None):
         self.storage = storage
@@ -40,7 +48,10 @@ class Scheduler:
         today = daily_at(now, config["archive_hour"], config["archive_minute"])
         recent = [activity.parse_time(value) for value in (checkpoints or {}).values()]
         daily_due = next_daily(now, config["archive_hour"], config["archive_minute"]) if recent and max(recent) >= today else activity.iso(today)
-        for name, due in (("archive", daily_due), ("refresh_prs", activity.iso(now))):
+        schedules = [("archive", daily_due), ("refresh_prs", activity.iso(now))]
+        if 'daily_stats' in callbacks:
+            schedules.append(('daily_stats', activity.iso(now)))
+        for name, due in schedules:
             if name not in jobs:
                 storage.save_job(name, {"status": "idle", "next_run": due, "attempts": 0, "parameters": {},
                                         "zone": zone_key(now),
@@ -76,10 +87,13 @@ class Scheduler:
             with self.lock:
                 job = next(value for value in self.storage.jobs() if value["name"] == job["name"])
                 name = job.pop("name")
-                if name == "archive" and job["status"] == "idle" and not job.get("last_error") and job.get("zone") != zone_key(now):
-                    today = daily_at(now, self.config["archive_hour"], self.config["archive_minute"])
+                if name not in self.callbacks:
+                    continue
+                daily = daily_schedule(name, self.config)
+                if daily and job["status"] == "idle" and not job.get("last_error") and job.get("zone") != zone_key(now):
+                    today = daily_at(now, *daily)
                     completed = activity.parse_time(job["last_finished"]) if job.get("last_finished") else None
-                    job["next_run"] = next_daily(now, self.config["archive_hour"], self.config["archive_minute"]) if completed and completed >= today else activity.iso(today)
+                    job["next_run"] = next_daily(now, *daily) if completed and completed >= today else activity.iso(today)
                     job["zone"] = zone_key(now)
                     self.storage.save_job(name, job)
                 if job["status"] == "running" or activity.parse_time(job["next_run"]) > now:
@@ -100,8 +114,8 @@ class Scheduler:
                 attempts = job.get("attempts", 0) + 1 if error else 0
                 if error:
                     due = activity.iso(finished + timedelta(seconds=min(60 * 2 ** min(attempts - 1, 6), 3600)))
-                elif name == "archive":
-                    due = next_daily(finished, self.config["archive_hour"], self.config["archive_minute"])
+                elif daily_schedule(name, self.config):
+                    due = next_daily(finished, *daily_schedule(name, self.config))
                 else:
                     due = activity.iso(finished + timedelta(seconds=self.config["refresh_seconds"]))
                 job.update(status="idle", next_run=due, attempts=attempts,

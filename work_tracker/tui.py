@@ -4,6 +4,7 @@ import asyncio
 from copy import deepcopy
 import hashlib
 import json
+import sys
 from pathlib import Path
 from urllib.parse import urlsplit
 import webbrowser
@@ -20,7 +21,13 @@ import work_activity as activity
 from .client import request
 from .tui_forms import IntentForm
 from .tui_close import ClosePRScreen
+from .tui_merge import MergePRScreen
+from .tui_stats import StatisticsScreen
 from .state_age import state_age
+from .clipboard import copy_macos
+from .tui_sort import COLUMN_LABELS, SORT_FIELDS, SortScreen, ordered_rows
+from .tui_sessions import SessionLinks, SessionsScreen
+from .preferences import DEFAULT_PR_SORT, validate_pr_sort
 
 
 REVIEW_STATES = ("Ready to Merge", "Changes requested", "Blocked", "Awaiting review")
@@ -39,6 +46,17 @@ def search_text(record):
     return json.dumps(fields, ensure_ascii=False).casefold()
 
 
+def opened_text(record, full=False):
+    value = (record.get('github') or {}).get('createdAt')
+    if not isinstance(value, str):
+        return 'Unknown'
+    try:
+        timestamp = activity.parse_time(value)
+    except (ValueError, TypeError, OverflowError):
+        return 'Unknown'
+    return activity.iso(timestamp) if full else timestamp.date().isoformat()
+
+
 def thread_button_id(url):
     return 'open-thread-' + hashlib.sha256(url.encode()).hexdigest()[:16]
 
@@ -53,6 +71,7 @@ def detail_text(record):
         text.append(plain(value, multiline=True) + '\n\n')
     section(plain(github.get('title') or record.get('task_title') or record['url']), record['url'])
     section('GitHub lifecycle', github.get('state') or 'Not yet verified')
+    section('Opened (UTC)', opened_text(record, full=True))
     state = record.get('review_state', 'Awaiting review')
     text.append(state + '\n', style=COLORS.get(state, 'white'))
     text.append(plain(record.get('review_reason') or 'No current GitHub observation') + '\n\n')
@@ -70,8 +89,12 @@ def detail_text(record):
     threads = record.get('slack-threads') or []
     section('Slack threads', '\n'.join(f"{t.get('description') or 'Thread'}\n{t['url']}" for t in threads) or 'None attached.')
     sessions = record.get('agent-sessions') or []
-    section('Agent sessions (references only)', '\n\n'.join(
+    section('Agent session references', '\n\n'.join(
         f"{s.get('tool')} on {s.get('machine')}\n{s.get('path')}\nsessionId: {s.get('sessionId')}" for s in sessions) or 'None attached.')
+    actions = record.get('agent-session-actions') or []
+    section('Session resume availability', '\n\n'.join(
+        f"{a.get('reference', {}).get('tool')}: {a.get('status')}\n{a.get('reason')}" for a in actions)
+        or 'No usable session link. Open full details to inspect available actions.')
     if github.get('body'):
         body = github['body']
         section('GitHub description', body[:4000] + ('\n[Display shortened. Open the PR for the full text.]' if len(body) > 4000 else ''))
@@ -99,6 +122,7 @@ class DetailScreen(ModalScreen[dict | None]):
         with Vertical(id='full-detail'):
             with VerticalScroll(id='detail-scroll'):
                 yield Static(detail_text(self.record), id='full-detail-text', markup=False)
+                yield SessionLinks(self.record, id='session-links')
                 with Vertical(id='detail-thread-buttons'):
                     for index, thread in enumerate(self.record.get('slack-threads') or []):
                         yield Button(f'Open Slack thread {index+1}', id=thread_button_id(thread['url']))
@@ -114,6 +138,7 @@ class DetailScreen(ModalScreen[dict | None]):
         previous_threads = self.record.get('slack-threads') or []
         self.record = deepcopy(record)
         self.query_one('#full-detail-text', Static).update(detail_text(self.record))
+        await self.query_one('#session-links', SessionLinks).update_record(self.record)
         threads = self.record.get('slack-threads') or []
         if threads != previous_threads:
             self._thread_targets = {thread_button_id(t['url']): t['url'] for t in threads}
@@ -184,8 +209,10 @@ class WorkTrackerApp(App):
     BINDINGS = [Binding('q', 'quit', 'Quit'), Binding('/', 'search', 'Search'),
                 Binding('r', 'refresh_prs', 'Refresh GitHub'), Binding('e', 'edit', 'Edit'),
                 Binding('n', 'register', 'Track PR'), Binding('t', 'slack', 'Slack link', show=False),
-                Binding('s', 'session', 'Agent session', show=False), Binding('d', 'remove_slack', 'Unlink Slack', show=False),
+                Binding('s', 'session', 'Sessions'), Binding('d', 'remove_slack', 'Unlink Slack', show=False),
                 Binding('o', 'open_pr', 'Open PR', show=False), Binding('x', 'close_pr', 'Close PR'),
+                Binding('m', 'merge_pr', 'Merge PR'), Binding('f3', 'statistics', 'Daily stats'),
+                Binding('p', 'copy_pr_link', 'Copy PR link'), Binding('f2', 'sort', 'Sort'),
                 Binding('c', 'clear_filters', 'Clear filters', show=False), Binding('escape', 'table', 'PR list', show=False)]
     CSS = """
     Screen { background: $background; }
@@ -209,12 +236,22 @@ class WorkTrackerApp(App):
     Screen.narrow #toolbar Button { min-width: 6; padding: 0 1; margin-right: 0; }
     """
 
-    def __init__(self, root, rpc=request, opener=None, poll_interval=3):
+    def __init__(self, root, rpc=request, opener=None, poll_interval=3, clipboard_writer=None):
         super().__init__()
         self.root = Path(root).expanduser().resolve()
         self.rpc = rpc
         self.opener = opener or webbrowser.open
         self.poll_interval = poll_interval
+        self.clipboard_writer = clipboard_writer
+        self.sort_field = DEFAULT_PR_SORT['field']
+        self.sort_descending = DEFAULT_PR_SORT['descending']
+        self._sort_preferences_loaded = False
+        self._sort_revision = 0
+        self._pending_sort = None
+        self._sort_save_running = False
+        self._sort_save_worker = None
+        self._sort_read_warned = False
+        self._sort_save_warned = False
         self.all_rows = []
         self.visible_rows = []
         self.selected_url = None
@@ -251,7 +288,7 @@ class WorkTrackerApp(App):
         with Horizontal(id='body'):
             with Vertical(id='list-pane'):
                 yield Static('Loading tracked PRs...', id='list-count', markup=False)
-                yield DataTable(id='prs', cursor_type='row', zebra_stripes=True)
+                yield DataTable(id='prs', cursor_type='row', zebra_stripes=True, show_row_labels=False)
                 yield Static('', id='empty', markup=False)
             with Vertical(id='preview'):
                 yield Static('PR detail · Enter for full view', id='preview-title', markup=False)
@@ -266,6 +303,7 @@ class WorkTrackerApp(App):
         table.add_column('PR', key='pr', width=20)
         self.title_column = table.add_column('Title', key='title', width=30)
         table.add_column('Since change', key='state-age', width=12)
+        table.add_column('Opened', key='opened', width=10)
         table.focus()
         self._layout()
         self.request_load()
@@ -290,7 +328,20 @@ class WorkTrackerApp(App):
     def _resize_columns(self):
         table = self._main.query_one('#prs', DataTable)
         if self.title_column in table.columns:
-            table.columns[self.title_column].width = max(16, table.size.width - 60)
+            available = table.scrollable_content_region.width - 2 * table.cell_padding * len(table.columns)
+            compact = available < 80
+            fixed = {'review': 17 if compact else 18, 'pr': 13 if compact else 20,
+                     'state-age': 12, 'opened': 10}
+            widths = {**fixed, 'title': max(12, available - sum(fixed.values()))}
+            changed = False
+            for column in table.ordered_columns:
+                width = widths[column.key.value]
+                changed |= column.width != width
+                column.width = width
+            if changed and table.row_count:
+                # Let Textual recalculate virtual geometry after fixed widths change.
+                row = self.visible_rows[0]['url']
+                table.update_cell(row, self.title_column, table.get_cell(row, self.title_column), update_width=True)
             table.refresh(layout=True)
 
     async def call_api(self, method, params=None):
@@ -323,20 +374,36 @@ class WorkTrackerApp(App):
         self._fetching = True
         self.load_view()
 
+    async def restore_sort(self):
+        if self._sort_preferences_loaded:
+            return
+        try:
+            value = validate_pr_sort(await self.call_api('get_pr_sort'))
+            if self._sort_revision == 0:
+                self.sort_field, self.sort_descending = value['field'], value['descending']
+            self._sort_preferences_loaded = True
+            self._sort_read_warned = False
+        except Exception:
+            if not self._sort_read_warned:
+                self.notify('Saved sort is unavailable. Using this window\'s current order.', severity='warning', markup=False)
+                self._sort_read_warned = True
+
     @work(group='view-load', exit_on_error=False)
     async def load_view(self):
         try:
+            await self.restore_sort()
             (rows, inventory), status = await asyncio.gather(
                 asyncio.to_thread(self._read_all_pages), self.call_api('status'))
             self.all_rows = rows
             self.inventory = inventory or status.get('inventory')
             self.backend_status = status
             self.connected = self.loaded = True
+            self._start_sort_save()
             self._set_options()
             self._render_rows()
             self._render_status()
             for screen in list(self.screen_stack):
-                if isinstance(screen, DetailScreen):
+                if isinstance(screen, (DetailScreen, SessionsScreen)):
                     current = next((r for r in rows if r['url'] == screen.record['url']), None)
                     if current is None:
                         current = await self.call_api('get_pr', {'url': screen.record['url']})
@@ -383,7 +450,14 @@ class WorkTrackerApp(App):
                              and (not self._workstream or value.get('workstream_name') == self._workstream)
                              and (not self._review or value.get('review_state') == self._review)
                              and (not query or query in search_text(value))]
+        self.visible_rows = ordered_rows(self.visible_rows, self.sort_field, self.sort_descending, REVIEW_STATES)
         table = self._main.query_one('#prs', DataTable)
+        for column in table.ordered_columns:
+            key = column.key.value
+            label = COLUMN_LABELS[key]
+            if key == self.sort_field:
+                label = ('Since chg' if key == 'state-age' else label) + (' ↓' if self.sort_descending else ' ↑')
+            column.label = Text(label)
         with self.batch_update():
             table.clear()
             for record in self.visible_rows:
@@ -392,18 +466,23 @@ class WorkTrackerApp(App):
                 short = f'{parts[1]} #{parts[-1]}' if len(parts) >= 4 else record['url']
                 title = record.get('github', {}).get('title') or record.get('task_title') or record['url']
                 table.add_row(Text(plain(state), style=COLORS.get(state, 'white')), Text(plain(short)[:60]),
-                              Text(plain(title)[:180]), Text(state_age(record), style='dim'), key=record['url'])
+                              Text(plain(title)[:180]), Text(state_age(record), style='dim'),
+                              Text(opened_text(record)), key=record['url'])
             selected = next((index for index, value in enumerate(self.visible_rows) if value['url'] == previous), 0)
             self.selected_url = self.visible_rows[selected]['url'] if self.visible_rows else None
             if self.visible_rows:
                 table.move_cursor(row=selected, animate=False, scroll=False)
-        self._main.query_one('#list-count', Static).update(f'{len(self.visible_rows)} matching / {len(self.all_rows)} open tracked PRs')
+        sort_label = dict((key, label) for label, key in SORT_FIELDS)[self.sort_field]
+        direction = '↓' if self.sort_descending else '↑'
+        self._main.query_one('#list-count', Static).update(
+            f'{len(self.visible_rows)} matching / {len(self.all_rows)} open tracked PRs · {sort_label} {direction} · F2 sort')
         empty = '' if self.visible_rows else ('No PRs match these filters. Clear filters to see the loaded register.' if self.all_rows
                                               else 'No open tracked PRs. Track an existing PR to start.')
         self._main.query_one('#empty', Static).update(empty)
         self._render_detail()
         self._update_buttons()
         self._resize_columns()
+        self.call_after_refresh(self._resize_columns)
 
     def _render_status(self):
         inventory = self.inventory or {}
@@ -466,6 +545,61 @@ class WorkTrackerApp(App):
             return
         self._render_rows()
 
+    @on(DataTable.HeaderSelected, '#prs')
+    def header_selected(self, event):
+        field = event.column_key.value
+        if field in COLUMN_LABELS and len(self.screen_stack) == 1:
+            descending = not self.sort_descending if field == self.sort_field else False
+            self._select_sort(field, descending)
+
+    def action_sort(self):
+        self.push_screen(SortScreen(self.sort_field, self.sort_descending), self._sort_closed)
+
+    def _sort_closed(self, value):
+        if value:
+            self._select_sort(*value)
+        self._layout()
+
+    def _select_sort(self, field, descending):
+        value = validate_pr_sort({'field': field, 'descending': descending})
+        self.sort_field, self.sort_descending = value['field'], value['descending']
+        self._sort_revision += 1
+        self._pending_sort = value
+        self._render_rows()
+        self._start_sort_save()
+
+    def _start_sort_save(self):
+        if self._pending_sort is not None and not self._sort_save_running:
+            self._sort_save_running = True
+            self._sort_save_worker = self.save_sort()
+
+    @work(group='sort-save', exit_on_error=False)
+    async def save_sort(self):
+        try:
+            while self._pending_sort is not None:
+                value = self._pending_sort
+                try:
+                    saved = validate_pr_sort(await self.call_api('set_pr_sort', value))
+                    if saved != value:
+                        raise ValueError('Sort save returned a different preference')
+                except Exception:
+                    if not self._sort_save_warned:
+                        self.notify('Sort changed in this window but could not be saved. It will retry after reconnection.',
+                                    severity='warning', markup=False)
+                        self._sort_save_warned = True
+                    break
+                if self._pending_sort == value:
+                    self._pending_sort = None
+                self._sort_save_warned = False
+        finally:
+            self._sort_save_running = False
+
+    async def action_quit(self):
+        self._start_sort_save()
+        if self._sort_save_running:
+            await self._sort_save_worker.wait()
+        self.exit()
+
     @on(DataTable.RowHighlighted, '#prs')
     def row_highlighted(self, event):
         key = event.row_key.value
@@ -490,7 +624,7 @@ class WorkTrackerApp(App):
             action()
 
     def check_action(self, action, parameters):
-        if len(self.screen_stack) > 1 and action in {'quit', 'search', 'refresh_prs', 'edit', 'register', 'slack', 'session', 'remove_slack', 'links', 'open_pr', 'clear_filters', 'table', 'close_pr'}:
+        if len(self.screen_stack) > 1 and action in {'quit', 'search', 'refresh_prs', 'edit', 'register', 'slack', 'session', 'remove_slack', 'links', 'open_pr', 'clear_filters', 'table', 'close_pr', 'merge_pr', 'copy_pr_link', 'sort', 'statistics'}:
             return False
         return True
 
@@ -540,10 +674,40 @@ class WorkTrackerApp(App):
         if self.selected_record:
             self.open_reference(self.selected_record['url'], 'pr')
 
+    async def copy_text(self, text, message):
+        try:
+            if self.clipboard_writer is not None:
+                await asyncio.to_thread(self.clipboard_writer, text)
+            elif sys.platform == 'darwin':
+                await asyncio.to_thread(copy_macos, text)
+            else:
+                self.copy_to_clipboard(text)
+            self.notify(message, markup=False)
+        except Exception:
+            self.notify('Could not copy to the clipboard. No tracker data changed.', severity='error', markup=False)
+
+    async def action_copy_pr_link(self):
+        if self.selected_record and len(self.screen_stack) == 1:
+            url = self.selected_record['url']
+            try:
+                activity.pr_url(url)
+            except ValueError:
+                self.notify('The selected PR URL is not valid.', severity='error', markup=False)
+                return
+            await self.copy_text(url, 'Copied PR link.')
+
     def action_inventory(self):
         url = (self.inventory or {}).get('github_url')
         if url:
             self.open_reference(url, 'inventory')
+
+    def action_statistics(self):
+        if self.connected and len(self.screen_stack) == 1:
+            self.push_screen(StatisticsScreen())
+
+    def action_merge_pr(self):
+        if self.connected and self.selected_record and len(self.screen_stack) == 1:
+            self.push_screen(MergePRScreen(self.selected_record), self._close_pr_finished)
 
     def action_close_pr(self):
         if self.connected and self.selected_record and len(self.screen_stack) == 1:
@@ -583,7 +747,13 @@ class WorkTrackerApp(App):
         self.open_form('slack')
 
     def action_session(self):
-        self.open_form('session')
+        if self.selected_record and len(self.screen_stack) == 1:
+            self.push_screen(SessionsScreen(self.selected_record), self._sessions_closed)
+
+    def _sessions_closed(self, result):
+        if result:
+            self.open_form('session', record=result['record'])
+        self._layout()
 
     def action_remove_slack(self):
         if not self.selected_record or not self.selected_record.get('slack-threads'):

@@ -30,15 +30,20 @@ def write(path, content, mode=0o600):
             os.unlink(temp)
 
 
-def install(source, home, python, commands, path, skill=None):
+def install(source, home, python, commands, path, skill=None, registration_skill=None):
     programs = {name: (source / name).read_bytes() for name in ("work_activity.py", "tracker.py")}
     package = source / "work_tracker"
     if not (package / "__init__.py").is_file():
         raise ValueError("Source must be a complete work-tracker checkout")
-    destination = home / ".agents/skills/work-activity/SKILL.md"
-    if skill is not None and (destination.is_symlink() or destination.exists()
-                              and "# Work activity" not in destination.read_text()):
-        raise ValueError(f"Refusing to replace an unrelated skill at {destination}")
+    skills = [(home / '.agents/skills/work-activity/SKILL.md', skill, '# Work activity'),
+              (home / '.agents/skills/register-pr/SKILL.md', registration_skill, '# Register a PR with work-tracker')]
+    fx_skill = home / '.fx/skills/register-pr/SKILL.md'
+    if fx_skill.exists() or fx_skill.is_symlink():
+        skills.append((fx_skill, registration_skill, '# Register a PR with work-tracker'))
+    for destination, content, heading in skills:
+        if content is not None and (destination.is_symlink() or destination.parent.is_symlink()
+                                    or destination.exists() and heading not in destination.read_text()):
+            raise ValueError(f'Refusing to replace an unrelated skill at {destination}')
     installed = home / ".local/lib/work-activity"
     for name, content in programs.items():
         write(installed / name, content)
@@ -52,8 +57,9 @@ def install(source, home, python, commands, path, skill=None):
         write(home / ".local/bin" / command, launcher.encode(), 0o700)
     config = {"commands": commands, "path": path}
     write(home / ".config/work-activity/config.json", (json.dumps(config, indent=2) + "\n").encode())
-    if skill is not None:
-        write(destination, skill)
+    for destination, content, heading in skills:
+        if content is not None:
+            write(destination, content)
     state = home / ".local/state/work-activity"
     state.mkdir(parents=True, exist_ok=True, mode=0o700)
     state.chmod(0o700)
@@ -106,9 +112,11 @@ def main():
     source = args.source.expanduser().resolve()
     python = prepare_python(source, Path.home())
     path = ":".join(dict.fromkeys([str(Path(commands["node"]).parent), "/opt/homebrew/bin",
-                                    str(Path.home() / ".local/bin"), "/usr/local/bin", "/usr/bin", "/bin"]))
+                                    str(Path.home() / ".local/bin"), "/usr/local/bin", "/usr/bin", "/bin",
+                                    "/usr/sbin", "/sbin"]))
     skill = source / "skills/work-activity/SKILL.md"
-    plist = install(source, Path.home(), python, commands, path, skill.read_bytes())
+    registration_skill = source / 'skills/register-pr/SKILL.md'
+    plist = install(source, Path.home(), python, commands, path, skill.read_bytes(), registration_skill.read_bytes())
     subprocess.run(["plutil", "-lint", str(plist)], check=True)
     if args.load:
         activate(plist, Path.home(), LABEL, LEGACY_LABEL)

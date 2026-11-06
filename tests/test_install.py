@@ -49,7 +49,9 @@ class InstallTests(unittest.TestCase):
             summary = home / ".agents/skills/daily-summary/SKILL.md"
             summary.parent.mkdir(parents=True)
             summary.write_text("existing summary instructions")
-            installer.install(source, home, "/usr/bin/python3", {}, "/usr/bin", b"# Work activity\n")
+            registration = b'# Register a PR with work-tracker\n'
+            installer.install(source, home, "/usr/bin/python3", {}, "/usr/bin", b"# Work activity\n", registration)
+            self.assertEqual((home / '.agents/skills/register-pr/SKILL.md').read_bytes(), registration)
             self.assertEqual(summary.read_text(), "existing summary instructions")
             self.assertEqual((home / ".agents/skills/work-activity/SKILL.md").read_text(), "# Work activity\n")
 
@@ -64,6 +66,71 @@ class InstallTests(unittest.TestCase):
                 installer.install(source, home, "/usr/bin/python3", {}, "/usr/bin", b"# Work activity\n")
             self.assertEqual(existing.read_text(), "user instructions")
             self.assertFalse((home / ".local/bin/work-activity").exists())
+
+    def test_refuses_to_replace_unrelated_registration_skill_before_installing_anything(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp)
+            source = self.source(home)
+            existing = home / '.agents/skills/register-pr/SKILL.md'
+            existing.parent.mkdir(parents=True)
+            existing.write_text('User-owned registration skill')
+            with self.assertRaises(ValueError):
+                installer.install(source, home, sys.executable, {}, '/usr/bin',
+                                  b'# Work activity\n', b'# Register a PR with work-tracker\n')
+            self.assertEqual(existing.read_text(), 'User-owned registration skill')
+            self.assertFalse((home / '.local/bin/work-tracker').exists())
+            self.assertFalse((home / '.agents/skills/work-activity/SKILL.md').exists())
+
+    def test_refuses_registration_skill_file_and_directory_symlinks(self):
+        for directory in (False, True):
+            with self.subTest(directory=directory), tempfile.TemporaryDirectory() as tmp:
+                home = Path(tmp)
+                source = self.source(home)
+                destination = home / '.agents/skills/register-pr/SKILL.md'
+                external = home / 'external/SKILL.md'
+                external.parent.mkdir()
+                content = '# Register a PR with work-tracker\nExternal copy\n'
+                external.write_text(content)
+                destination.parent.parent.mkdir(parents=True)
+                if directory:
+                    destination.parent.symlink_to(external.parent, target_is_directory=True)
+                else:
+                    destination.parent.mkdir()
+                    destination.symlink_to(external)
+                with self.assertRaises(ValueError):
+                    installer.install(source, home, sys.executable, {}, '/usr/bin',
+                                      registration_skill=b'# Register a PR with work-tracker\nReplacement\n')
+                self.assertEqual(external.read_text(), content)
+                self.assertFalse((home / '.local/bin/work-tracker').exists())
+
+    def test_reinstall_updates_an_owned_registration_skill(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp)
+            source = self.source(home)
+            for version in ('First', 'Updated'):
+                content = f'# Register a PR with work-tracker\n{version}\n'.encode()
+                installer.install(source, home, sys.executable, {}, '/usr/bin', registration_skill=content)
+                self.assertEqual((home / '.agents/skills/register-pr/SKILL.md').read_bytes(), content)
+
+    def test_reinstall_updates_owned_fx_skill_and_refuses_unrelated_shadow_copy(self):
+        for owned in (True, False):
+            with self.subTest(owned=owned), tempfile.TemporaryDirectory() as tmp:
+                home = Path(tmp)
+                source = self.source(home)
+                destination = home / '.fx/skills/register-pr/SKILL.md'
+                destination.parent.mkdir(parents=True)
+                previous = '# Register a PR with work-tracker\nOld\n' if owned else 'Unrelated user skill'
+                destination.write_text(previous)
+                updated = b'# Register a PR with work-tracker\nUpdated resume verification\n'
+                if owned:
+                    installer.install(source, home, sys.executable, {}, '/usr/bin', registration_skill=updated)
+                    self.assertEqual(destination.read_bytes(), updated)
+                    self.assertEqual((home / '.agents/skills/register-pr/SKILL.md').read_bytes(), updated)
+                else:
+                    with self.assertRaises(ValueError):
+                        installer.install(source, home, sys.executable, {}, '/usr/bin', registration_skill=updated)
+                    self.assertEqual(destination.read_text(), previous)
+                    self.assertFalse((home / '.local/bin/work-tracker').exists())
 
     def test_main_installs_from_standalone_checkout_without_source_override(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -81,6 +148,15 @@ class InstallTests(unittest.TestCase):
                              (ROOT / "ACTIVITY.md").read_bytes())
             self.assertEqual((home / ".agents/skills/work-activity/SKILL.md").read_bytes(),
                              (ROOT / "skills/work-activity/SKILL.md").read_bytes())
+            self.assertEqual((home / '.agents/skills/register-pr/SKILL.md').read_bytes(),
+                             (ROOT / 'skills/register-pr/SKILL.md').read_bytes())
+            plist = plistlib.loads((home / 'Library/LaunchAgents' / f'{installer.LABEL}.plist').read_bytes())
+            installed_path = plist['EnvironmentVariables']['PATH']
+            for directory in ('/usr/bin', '/bin', '/usr/sbin', '/sbin'):
+                self.assertIn(directory, installed_path.split(':'))
+            import json
+            collector_config = json.loads((home / '.config/work-activity/config.json').read_text())
+            self.assertEqual(collector_config['path'], installed_path)
             run.assert_called_once_with(["plutil", "-lint", str(home / "Library/LaunchAgents" / f"{installer.LABEL}.plist")],
                                         check=True)
 

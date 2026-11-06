@@ -24,12 +24,23 @@ The TUI can request a GitHub close with an optional comment only after explicit
 confirmation. MCP remains intent-only and must expose no GitHub write tool.
 Do not perform a live close as a verification step without a specific PR request.
 Never automatically retry an uncertain external write or delete a branch.
+Jack also requested `m` to merge from the PR list. The human-only merge dialog
+loads fresh conditions, pins the confirmed head SHA, and offers allowed methods.
+Keep GitHub merges behind explicit confirmation and the application-owned ledger.
+Do not perform a live merge as a verification step without a specific PR request.
+MCP remains intent-only. Do not enable auto-merge or bypass required merge queues.
 
 The TUI must stay a client: use the private application API, never SQLite or
 external service commands. Its periodic timer only reloads local views.
 Metadata editors must send changed fields only and use atomic edit preconditions
 to reject stale writes. Reuse an intent key after an uncertain save response.
 Keep untrusted titles, descriptions, and links out of terminal markup and commands.
+
+Daily PR statistics use observed snapshots overall and per project. Unallocated
+is the stats label for the default Unclassified project, including zero counts.
+Mean and p90 use that local day's closures, not cumulative completions.
+Keep old inventory/project membership intact and expose stale or missing dates.
+Do not fabricate snapshots for offline days or add a client-owned stats store.
 
 The local application executable owns the datastore and scheduled jobs.
 The TUI, CLI, and MCP adapter are interfaces onto that application. They do not
@@ -82,5 +93,10 @@ Keep the Slack retry-notice handling narrow so malformed output still fails.
 
 The real installer changes the user's installed CLI and LaunchAgent.
 Use temporary-home installer tests before running a real installation.
-Do not commit, publish, push, or create a GitHub repository without an explicit
-request for that action.
+Jack requested commits and pushes as completed changes pass verification.
+At each finished checkpoint, review and scan the exact files before staging.
+Commit and push only source code, documentation, skills, and synthetic tests.
+Never include collected PR/activity data, stats exports, databases, transcripts,
+credentials, logs, or scan reports. Preserve unrelated user changes.
+Push normal commits to the configured upstream. Never force-push, rewrite
+history, or create a repository without a separate explicit request.

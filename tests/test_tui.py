@@ -8,10 +8,12 @@ import time
 import unittest
 from unittest import mock
 
+from work_tracker.preferences import DEFAULT_PR_SORT, validate_pr_sort
+
 HAS_TEXTUAL = importlib.util.find_spec('textual') is not None
 if HAS_TEXTUAL:
     from textual.widgets import Button, DataTable, Input, Select, Static, TextArea
-    from work_tracker.tui import DetailScreen, LinksScreen, WorkTrackerApp, detail_text, thread_button_id
+    from work_tracker.tui import DetailScreen, LinksScreen, WorkTrackerApp, detail_text, opened_text, thread_button_id
     from work_tracker.tui_forms import IntentForm
 
 
@@ -40,6 +42,9 @@ class FakeAPI:
         self.receipts = {}
         self.fail_read = False
         self.fail_catalog = False
+        self.fail_sort_read = False
+        self.fail_sort_save = False
+        self.sort_preference = dict(DEFAULT_PR_SORT)
         self.catalog_extra = deepcopy(catalog_extra or {})
         self.lose_next_receipt = False
         self.lock = threading.RLock()
@@ -52,8 +57,17 @@ class FakeAPI:
         params = params or {}
         with self.lock:
             self.calls.append((method, deepcopy(params)))
-            if self.fail_read and method in ('status', 'list_prs'):
+            if self.fail_read and method in ('status', 'list_prs', 'get_pr_sort'):
                 raise RuntimeError('Local application unavailable')
+            if method == 'get_pr_sort':
+                if self.fail_sort_read:
+                    raise RuntimeError('Saved sort unavailable')
+                return deepcopy(self.sort_preference)
+            if method == 'set_pr_sort':
+                if self.fail_sort_save:
+                    raise RuntimeError('Sort save unavailable')
+                self.sort_preference = validate_pr_sort(params)
+                return deepcopy(self.sort_preference)
             if method == 'status':
                 return {'prs': len(self.rows), 'jobs': deepcopy(self.jobs), 'inventory': deepcopy(self.inventory)}
             if method == 'list_prs':
@@ -128,6 +142,21 @@ class FakeAPI:
 
 
 @unittest.skipUnless(HAS_TEXTUAL, 'Install requirements.lock for Textual UI tests')
+class OpenedDateTests(unittest.TestCase):
+    def test_opened_date_uses_utc_and_rejects_missing_or_invalid_timestamps(self):
+        values = ((None, 'Unknown'), ('', 'Unknown'), ('bad', 'Unknown'),
+                  ('2026-11-03', 'Unknown'), (42, 'Unknown'),
+                  ('2026-11-03T23:30:00-02:00', '2026-11-04'),
+                  ('2026-11-03T10:30:00Z', '2026-11-03'))
+        for value, expected in values:
+            with self.subTest(value=value):
+                self.assertEqual(opened_text({'github': {'createdAt': value}}), expected)
+        self.assertEqual(opened_text({'github': {'createdAt': '2026-11-03T23:30:00-02:00'}}, full=True),
+                         '2026-11-04T01:30:00Z')
+        self.assertEqual(opened_text({}), 'Unknown')
+
+
+@unittest.skipUnless(HAS_TEXTUAL, 'Install requirements.lock for Textual UI tests')
 class TUITests(unittest.IsolatedAsyncioTestCase):
     async def settle(self, app, pilot):
         await app.workers.wait_for_complete()
@@ -148,12 +177,45 @@ class TUITests(unittest.IsolatedAsyncioTestCase):
                 await self.settle(app, pilot)
                 self.assertTrue(app.connected)
                 self.assertEqual(app.query_one('#prs', DataTable).row_count, 450)
-                self.assertEqual(app.query_one('#prs', DataTable).get_row_at(0)[2].plain, '[bold]Credential flow[/bold]')
+                self.assertEqual(app.visible_rows[0]['url'], min(row['url'] for row in rows))
+                self.assertEqual(app.query_one('#prs', DataTable).get_row(PR)[2].plain, '[bold]Credential flow[/bold]')
                 self.assertEqual({p['offset'] for m,p in api.calls if m == 'list_prs'}, {0, 200, 400})
                 app.query_one('#search', Input).value = 'needle beyond'
                 await pilot.pause()
                 self.assertEqual(len(app.visible_rows), 1)
         self.assertFalse(any(m in ('intent', 'refresh', 'serve', 'stop') for m,p in api.calls))
+
+    async def test_opened_column_uses_cached_metadata_and_updates_from_local_reads(self):
+        api = FakeAPI()
+        api.rows[0]['github']['createdAt'] = '2026-11-03T23:30:00-02:00'
+        app = self.app(api)
+        async with app.run_test(size=(140, 40)) as pilot:
+            await self.settle(app, pilot)
+            table = app.query_one('#prs', DataTable)
+            self.assertEqual(len(table.columns), 5)
+            self.assertEqual(table.get_row_at(0)[4].plain, '2026-11-04')
+            self.assertEqual(table.get_row_at(1)[4].plain, 'Unknown')
+            self.assertIn('2026-11-04T01:30:00Z', detail_text(api.rows[0]).plain)
+            api.rows[1]['github']['createdAt'] = '2026-10-12T00:00:00Z'
+            app.request_load()
+            await self.settle(app, pilot)
+            self.assertEqual(table.get_row_at(1)[4].plain, '2026-10-12')
+            api.fail_read = True
+            app.request_load()
+            await self.settle(app, pilot)
+            self.assertEqual(table.get_row_at(0)[4].plain, '2026-11-04')
+            self.assertFalse(any(method not in ('status', 'list_prs', 'get_pr_sort') for method, params in api.calls))
+
+    async def test_opened_column_fits_a_narrow_scrolling_list(self):
+        rows = [record(100+i) for i in range(60)]
+        for row in rows:
+            row['github']['createdAt'] = '2026-11-03T10:00:00Z'
+        app = self.app(FakeAPI(rows))
+        async with app.run_test(size=(80, 24)) as pilot:
+            await self.settle(app, pilot)
+            table = app.query_one('#prs', DataTable)
+            self.assertEqual(table.get_row_at(0)[4].plain, '2026-11-03')
+            self.assertLessEqual(table.virtual_size.width, table.scrollable_content_region.width)
 
     async def test_search_keys_filters_and_metadata_scope(self):
         api = FakeAPI()
@@ -417,6 +479,9 @@ class TUITests(unittest.IsolatedAsyncioTestCase):
         async with app.run_test(size=(140, 40)) as pilot:
             await self.settle(app, pilot)
             await pilot.press('s')
+            await self.settle(app, pilot)
+            await pilot.click('#sessions-add')
+            await pilot.pause()
             for name,value in {'tool':'fx','path':'relative/path','sessionId':'known-id','machine':'my-laptop'}.items():
                 app.screen.query_one(f'#form-{name}', Input).value = value
             await pilot.press('ctrl+enter')

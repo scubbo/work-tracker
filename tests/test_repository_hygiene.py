@@ -42,6 +42,10 @@ class RepositoryHygieneTests(unittest.TestCase):
             'id_rsa', 'id_ed25519', 'signing.key', 'client.pem', 'client.p12',
             'client.pfx', 'client.keystore', '.netrc', '.npmrc', '.pypirc',
             'gitleaks-report.json', 'gitleaks-report.sarif',
+            'events.jsonl', 'events.jsonl.gz', 'export.ndjson', 'daily-stats.csv',
+            'project-stats.tsv', 'stats.parquet', 'stats.arrow', 'stats.json',
+            'statistics.json', 'daily-stats.json', 'stats-history.json', 'metrics.json',
+            'custom-state/stats.json', 'custom-state/statistics.json',
         ]
         self.assertEqual(self.ignored(paths), set(paths))
 

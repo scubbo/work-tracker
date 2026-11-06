@@ -4,12 +4,14 @@ from contextlib import contextmanager
 from datetime import datetime, timezone
 import hashlib
 import json
+import re
 from pathlib import Path
 import sqlite3
 from typing import Protocol
 import uuid
 
 import work_activity as activity
+from .preferences import DEFAULT_PR_SORT, validate_pr_sort
 
 
 UNCLASSIFIED = "Unclassified"
@@ -29,6 +31,10 @@ class Storage(Protocol):
     def apply_intent(self, key: str, kind: str, payload: dict, source: dict) -> dict: ...
     def list_prs(self, **filters) -> list: ...
     def catalog(self) -> dict: ...
+    def capture_statistics(self, now: datetime) -> dict: ...
+    def statistics(self, params: dict, now: datetime) -> dict: ...
+    def get_pr_sort(self) -> dict: ...
+    def set_pr_sort(self, value: dict) -> dict: ...
     def observe(self, url: str, github: dict, review_state: str, reason: str, expected_version=None) -> bool: ...
     def observation_error(self, url: str, error: str, expected_version=None) -> None: ...
     def merge_archive(self, prs: list, evidence: list, messages: list, expected_versions=None) -> None: ...
@@ -36,6 +42,10 @@ class Storage(Protocol):
     def close_request(self, key: str) -> dict: ...
     def finish_close(self, key: str, status: str, message: str, phase: str) -> dict: ...
     def recover_closes(self) -> None: ...
+    def begin_merge(self, key: str, url: str, head_sha: str, method: str) -> tuple: ...
+    def merge_request(self, key: str) -> dict: ...
+    def finish_merge(self, key: str, status: str, message: str, phase: str) -> dict: ...
+    def recover_merges(self) -> None: ...
     def jobs(self) -> list: ...
     def save_job(self, name: str, value: dict) -> None: ...
     def inventory(self) -> dict | None: ...
@@ -49,7 +59,7 @@ class SQLiteStorage:
         self.path.parent.chmod(0o700)
         with self._connection() as db:
             version = db.execute("PRAGMA user_version").fetchone()[0]
-            if version not in (0, 1, 2, 3):
+            if version not in (0, 1, 2, 3, 4, 5):
                 raise ValueError(f"Unsupported database schema {version}; refusing to change it")
             db.execute("PRAGMA journal_mode=WAL")
             db.executescript("""
@@ -83,13 +93,27 @@ class SQLiteStorage:
                     key TEXT PRIMARY KEY, url TEXT NOT NULL REFERENCES prs(url), comment TEXT NOT NULL,
                     status TEXT NOT NULL, message TEXT NOT NULL, phase TEXT NOT NULL,
                     created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
+                CREATE TABLE IF NOT EXISTS pr_merge_requests(
+                    key TEXT PRIMARY KEY, url TEXT NOT NULL REFERENCES prs(url),
+                    head_sha TEXT NOT NULL, method TEXT NOT NULL, status TEXT NOT NULL,
+                    message TEXT NOT NULL, phase TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
+                CREATE TABLE IF NOT EXISTS stats_days(day TEXT PRIMARY KEY, metadata TEXT NOT NULL);
+                CREATE TABLE IF NOT EXISTS stats_members(
+                    day TEXT NOT NULL REFERENCES stats_days(day), url TEXT NOT NULL, facts TEXT NOT NULL,
+                    PRIMARY KEY(day,url));
+                CREATE TABLE IF NOT EXISTS stats_closures(
+                    url TEXT NOT NULL REFERENCES prs(url), closed_at TEXT NOT NULL, kind TEXT NOT NULL,
+                    opened_at TEXT, observed_at TEXT NOT NULL, PRIMARY KEY(url,closed_at));
+                CREATE TABLE IF NOT EXISTS stats_metrics(
+                    day TEXT NOT NULL REFERENCES stats_days(day), project_id TEXT NOT NULL, payload TEXT NOT NULL,
+                    PRIMARY KEY(day,project_id));
             """)
             columns = {row[1] for row in db.execute('PRAGMA table_info(prs)')}
             for name, definition in (('state_changed_at', 'TEXT'), ('state_first_seen_at', 'TEXT'),
                                      ('observation_version', 'INTEGER NOT NULL DEFAULT 0')):
                 if name not in columns:
                     db.execute(f'ALTER TABLE prs ADD COLUMN {name} {definition}')
-            db.execute('PRAGMA user_version=3')
+            db.execute('PRAGMA user_version=5')
             self._workstream(db, UNCLASSIFIED, UNCLASSIFIED)
             db.commit()
 
@@ -293,6 +317,26 @@ class SQLiteStorage:
                                  "workstreams": workstreams})
             return {"projects": projects}
 
+    def capture_statistics(self, now):
+        from .stats_store import DailyStatsStore
+        return DailyStatsStore(self).capture(now)
+
+    def statistics(self, params, now):
+        from .stats_store import DailyStatsStore
+        return DailyStatsStore(self).history(params, now)
+
+    def get_pr_sort(self):
+        with self._connection(read=True) as db:
+            row = db.execute("SELECT value FROM settings WHERE key='tui_pr_sort'").fetchone()
+            return validate_pr_sort(json.loads(row[0])) if row else dict(DEFAULT_PR_SORT)
+
+    def set_pr_sort(self, value):
+        value = validate_pr_sort(value)
+        with self._transaction() as db:
+            db.execute("INSERT INTO settings(key,value) VALUES('tui_pr_sort',?) "
+                       "ON CONFLICT(key) DO UPDATE SET value=excluded.value", (encoded(value),))
+        return value
+
     def list_prs(self, project=None, workstream=None, search=None, state="open"):
         with self._connection(read=True) as db:
             registry = self._registry(db)
@@ -303,6 +347,8 @@ class SQLiteStorage:
             result = []
             pending_closes = {r['url']: dict(r) for r in db.execute(
                 "SELECT * FROM pr_close_requests WHERE status IN ('running','uncertain')")}
+            pending_merges = {r['url']: dict(r) for r in db.execute(
+                "SELECT * FROM pr_merge_requests WHERE status IN ('running','uncertain')")}
             for row in rows:
                 value = registry[row["url"]]
                 github = value["github"]
@@ -318,6 +364,7 @@ class SQLiteStorage:
                               "review_reason": row["refresh_error"] or row["reason"], "observed_at": row["observed_at"],
                               "refresh_error": row["refresh_error"], "observation_version": row['observation_version'],
                               "close_request": pending_closes.get(row['url']),
+                              "merge_request": pending_merges.get(row['url']),
                               "state_changed_at": None if row['refresh_error'] else row['state_changed_at'],
                               "state_first_seen_at": None if row['refresh_error'] else row['state_first_seen_at']})
                 searchable = [value.get('url'), value.get('description'), github.get('title'),
@@ -383,6 +430,8 @@ class SQLiteStorage:
                 return dict(old), False
             if not db.execute('SELECT 1 FROM prs WHERE url=?', (url,)).fetchone():
                 raise ValueError('Only an ingested PR can be closed')
+            if db.execute("SELECT 1 FROM pr_merge_requests WHERE url=? AND status IN ('running','uncertain')", (url,)).fetchone():
+                raise ValueError('A merge request is pending or uncertain. Check its outcome on GitHub first.')
             if db.execute("SELECT 1 FROM pr_close_requests WHERE url=? AND status IN ('running','uncertain')", (url,)).fetchone():
                 raise ValueError('A previous close request is pending or uncertain. Check its outcome on GitHub first.')
             now = now_iso()
@@ -411,6 +460,52 @@ class SQLiteStorage:
         with self._transaction() as db:
             db.execute("UPDATE pr_close_requests SET status='uncertain',message=?,updated_at=? WHERE status='running'",
                        ('Application restarted during this request. Check GitHub before another close. No write will be replayed.', now_iso()))
+
+    def begin_merge(self, key, url, head_sha, method):
+        if not isinstance(key, str) or not key or len(key) > 200:
+            raise ValueError('A merge-request key of 1 to 200 characters is required')
+        activity.pr_url(url)
+        if not isinstance(head_sha, str) or not re.fullmatch(r'(?:[0-9a-f]{40}|[0-9a-f]{64})', head_sha):
+            raise ValueError('An exact head commit SHA is required')
+        if method not in ('merge', 'squash', 'rebase'):
+            raise ValueError('Choose merge, squash, or rebase')
+        with self._transaction() as db:
+            old = db.execute('SELECT * FROM pr_merge_requests WHERE key=?', (key,)).fetchone()
+            if old:
+                if (old['url'], old['head_sha'], old['method']) != (url, head_sha, method):
+                    raise ValueError('Merge-request key was already used for different content')
+                return dict(old), False
+            if not db.execute('SELECT 1 FROM prs WHERE url=?', (url,)).fetchone():
+                raise ValueError('Only an ingested PR can be merged')
+            for table in ('pr_close_requests', 'pr_merge_requests'):
+                if db.execute(f"SELECT 1 FROM {table} WHERE url=? AND status IN ('running','uncertain')", (url,)).fetchone():
+                    raise ValueError('A PR action is pending or uncertain. Check its outcome on GitHub first.')
+            now = now_iso()
+            db.execute('INSERT INTO pr_merge_requests VALUES(?,?,?,?,?,?,?,?,?)',
+                       (key, url, head_sha, method, 'running', 'Checking current GitHub merge conditions', 'preflight', now, now))
+            return dict(db.execute('SELECT * FROM pr_merge_requests WHERE key=?', (key,)).fetchone()), True
+
+    def merge_request(self, key):
+        if not isinstance(key, str) or not key:
+            raise ValueError('A merge-request key is required')
+        with self._connection(read=True) as db:
+            row = db.execute('SELECT * FROM pr_merge_requests WHERE key=?', (key,)).fetchone()
+            if row is None:
+                raise ValueError('Merge request not found')
+            return dict(row)
+
+    def finish_merge(self, key, status, message, phase):
+        if status not in ('running', 'succeeded', 'already_merged', 'failed', 'uncertain'):
+            raise ValueError('Invalid merge-request status')
+        with self._transaction() as db:
+            db.execute('UPDATE pr_merge_requests SET status=?,message=?,phase=?,updated_at=? WHERE key=?',
+                       (status, message, phase, now_iso(), key))
+            return dict(db.execute('SELECT * FROM pr_merge_requests WHERE key=?', (key,)).fetchone())
+
+    def recover_merges(self):
+        with self._transaction() as db:
+            db.execute("UPDATE pr_merge_requests SET status='uncertain',message=?,updated_at=? WHERE status='running'",
+                       ('Application restarted during this merge. Check GitHub before another attempt. No write will be replayed.', now_iso()))
 
     def inventory(self):
         with self._connection(read=True) as db:

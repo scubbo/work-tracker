@@ -71,6 +71,31 @@ class InterfaceTests(unittest.TestCase):
             request(self.root, 'intent', {'key': 'spoof', 'kind': 'update_pr',
                                           'payload': {'url': PR, 'state': 'merged'}})
 
+    def test_daily_statistics_are_readable_and_snapshot_jobs_belong_to_the_application(self):
+        request(self.root,'intent',{'key':'stats-fixture','kind':'register_pr','payload':{'url':PR,'project':'Alpha'}})
+        before=request(self.root,'get_pr',{'url':PR})
+        value=request(self.root,'statistics',{'project':'*','days':1})
+        self.assertEqual({row['project'] for row in value['items']},{'Overall','Alpha','Unallocated'})
+        self.assertEqual(next(row for row in value['items'] if row['project']=='Overall')['total_tracked'],1)
+        self.assertEqual(next(row for row in value['items'] if row['project']=='Unallocated')['total_tracked'],0)
+        self.assertEqual(request(self.root,'get_pr',{'url':PR}),before)
+        queued=request(self.root,'capture_statistics')
+        self.assertEqual(queued['name'],'daily_stats')
+        with self.assertRaises(ValueError): request(self.root,'statistics',{'shell':'anything'})
+        with self.assertRaises(ValueError): request(self.root,'capture_statistics',{'project':'Alpha'})
+
+    def test_merge_confirmation_boundary_is_enforced_through_the_real_socket(self):
+        request(self.root, 'intent', {'key': 'merge-fixture', 'kind': 'register_pr', 'payload': {'url': PR}})
+        self.assertIn('confirmed_pr_merge', request(self.root, 'status')['github_write_operations'])
+        for method, params in (
+            ('merge_pr', {'key': 'unconfirmed', 'url': PR, 'method': 'squash', 'head_sha': 'a'*40, 'confirmed': False}),
+            ('merge_preview', {'url': PR.replace('/42', '/99')}),
+            ('merge_result', {'key': 'unknown-merge'}),
+            ('intent', {'key': 'forbidden-merge', 'kind': 'merge_pr', 'payload': {'url': PR}})):
+            with self.subTest(method=method), self.assertRaises(ValueError):
+                request(self.root, method, params)
+        self.assertIsNone(request(self.root, 'get_pr', {'url': PR})['merge_request'])
+
     def test_legacy_cli_routes_to_application_and_does_not_fall_back_when_offline(self):
         args = [sys.executable, str(ROOT/'work_activity.py'), '--state-dir', str(self.root),
                 'pr', 'set', PR, '--description', 'Intent from legacy CLI']
@@ -103,6 +128,9 @@ class InterfaceTests(unittest.TestCase):
                 self.assertNotIn('create_github_pr', names)
                 self.assertNotIn('close_pr', names)
                 self.assertNotIn('close_result', names)
+                self.assertNotIn('merge_pr', names)
+                self.assertNotIn('merge_result', names)
+                self.assertNotIn('merge_preview', names)
                 self.assertEqual(len(names), 8)
                 payload = {'url': PR, 'intent_key': 'from-agent', 'description': 'Why this matters'}
                 result = await client.call_tool('submit_pr', payload)
@@ -117,13 +145,47 @@ class InterfaceTests(unittest.TestCase):
                 forbidden = await client.call_tool('update_pr', {
                     'url': PR, 'intent_key': 'bad', 'changes': {'github': {'state': 'merged'}}})
                 self.assertTrue(forbidden.is_error)
-                value = await client.call_tool('get_pr', {'url': PR})
+                value = await client.call_tool('get_pr', {'url': PR, 'verify_sessions': True})
+                self.assertEqual(value.structured_content['pr']['tracking-outcomes']['pr_registration'], 'registered')
+                self.assertEqual(value.structured_content['pr']['tracking-outcomes']['usable_session_actions'], 0)
+                self.assertEqual(value.structured_content['pr']['agent-session-actions'][0]['status'], 'unsupported')
                 self.assertEqual(value.structured_content['pr']['description'], 'Why this matters')
                 self.assertEqual(value.structured_content['pr']['agent-sessions'][0]['sessionId'], 'explicit-session-id')
                 self.assertEqual(value.structured_content['pr']['github'], {})
         anyio.run(exercise)
         self.assertIsNone(self.process.poll())
         self.assertGreater(request(self.root, 'status')['pid'], 0)
+
+    @unittest.skipUnless(importlib.util.find_spec('textual'), 'Install requirements.lock for Textual tests')
+    def test_sort_choice_survives_tui_restart_through_the_real_application_socket(self):
+        import asyncio
+        from textual.widgets import Select
+        from work_tracker.tui import WorkTrackerApp
+        request(self.root, 'intent', {'key': 'sort-fixture', 'kind': 'register_pr', 'payload': {'url': PR}})
+        before = request(self.root, 'get_pr', {'url': PR})
+        pid = request(self.root, 'status')['pid']
+        async def exercise():
+            first = WorkTrackerApp(self.root, poll_interval=0)
+            async with first.run_test(size=(100, 32)) as pilot:
+                await first.workers.wait_for_complete()
+                await pilot.pause()
+                await pilot.press('f2')
+                await pilot.pause()
+                first.screen.query_one('#sort-field', Select).value = 'opened'
+                first.screen.query_one('#sort-direction', Select).value = True
+                await pilot.click('#sort-apply')
+                await pilot.press('q')
+            self.assertEqual(request(self.root, 'get_pr_sort'), {'field': 'opened', 'descending': True})
+            second = WorkTrackerApp(self.root, poll_interval=0)
+            async with second.run_test(size=(100, 32)) as pilot:
+                await second.workers.wait_for_complete()
+                await pilot.pause()
+                self.assertEqual((second.sort_field, second.sort_descending), ('opened', True))
+        asyncio.run(exercise())
+        self.assertEqual(request(self.root, 'get_pr', {'url': PR}), before)
+        self.assertEqual(request(self.root, 'status')['pid'], pid)
+        with self.assertRaises(ValueError):
+            request(self.root, 'set_pr_sort', {'field': 'unknown', 'descending': False})
 
     @unittest.skipUnless(importlib.util.find_spec('textual'), 'Install requirements.lock for Textual tests')
     def test_textual_editor_uses_the_real_application_socket_and_does_not_stop_it(self):

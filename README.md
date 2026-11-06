@@ -9,8 +9,8 @@ management views remain follow-ups.
 The first slice refreshes only PRs already ingested into the tracker. It supports
 review/readiness status, local agent intent, project/workstream classification,
 Slack links, and multiple agent-session references. Collection and refresh are
-read-only. The TUI also offers an explicitly confirmed PR close with an optional
-comment. MCP cannot create or modify GitHub PRs.
+read-only. The TUI also offers explicit confirmation for PR closing with an optional
+comment and head-pinned merging. MCP cannot create or modify GitHub PRs.
 
 Read [the interview decisions](docs/requirements.md) for the full planned scope.
 Read [the runtime guide](docs/application.md) for ownership and operational details.
@@ -97,9 +97,26 @@ ingestion, and Links for Slack or multi-tool agent-session references.
 Project and workstream inputs suggest stored names. Type a prefix and press
 Right Arrow to complete it. Workstreams follow the entered project.
 New names remain allowed.
+The default order is the full PR URL, ascending. Click a column header to sort.
+Click it again to reverse the order, or press F2 to choose a column and direction.
+Unknown dates stay last. The application saves the sort column and direction and restores them after TUI or backend restarts.
+Filters still start clear. If a save fails, the TUI keeps the local order, warns, and retries after reconnection.
+Press `s` to view saved agent sessions, including each tool, workspace, session ID, machine, and resume availability.
+Choose `Activate open herdr pane` to find and focus an existing local pane that contains the saved session.
+The application searches running local herdr sessions and requires an exact identity match. It never starts another conversation.
+If no pane matches, use `Check and copy resume command`. Choose `Add session reference` only to attach another session.
+Press `p` to copy the selected PR URL, including from the cached offline view.
+On macOS, copying uses the system clipboard. Other platforms use terminal clipboard support.
+
 Press `r` to request a GitHub refresh in the background application.
 The TUI's three-second view poll only reads local data.
 Closing it leaves the application and scheduled jobs running.
+
+The Opened column shows the cached GitHub creation date in UTC (`YYYY-MM-DD`).
+Full details show the complete opening timestamp. Missing or invalid dates show
+`Unknown`. Titles and opening timestamps persist in local SQLite across restarts.
+The TUI reads these cached fields, not GitHub, when it redraws the list.
+A failed GitHub refresh retains the last known metadata and marks it stale.
 
 The Since change column shows elapsed time in the displayed review/readiness
 state. `≥` marks a lower bound since tracking began. Unknown history or stale
@@ -109,6 +126,13 @@ Press `x` on the selected PR to open Close PR. Enter an optional multiline
 comment, then choose Close PR or press Ctrl+Enter to confirm the GitHub change.
 Escape cancels before submission. Branches and the linked Task stay unchanged.
 An uncertain request is not replayed. Reopen its dialog to check the same request.
+
+Press `m` on the selected PR to open Merge PR. The application loads the current head commit and allowed merge methods.
+Choose a method if several are available, then click Merge PR or press Ctrl+Enter to confirm.
+The application only attempts an immediate merge when GitHub reports a clean, non-draft PR. It pins the request to the confirmed commit.
+It does not enable auto-merge, bypass checks or merge queues, request branch deletion, or close the linked Task.
+GitHub's repository policy for automatic head-branch deletion still applies.
+If the outcome is uncertain, the dialog checks the same request without replaying a write.
 
 See [the TUI guide](docs/tui.md) for controls, retry/conflict handling, and limits.
 
@@ -146,6 +170,31 @@ After SQLite migration it calls the application. It does not silently fall back
 to editing JSON if the application is unavailable. `prs.json` becomes a
 compatibility export, not the authoritative register.
 
+## Daily PR statistics
+
+Press F3 in the TUI to view daily history. Choose Overall, all projects, or one project.
+The `Unallocated` bucket maps to the existing Unclassified project without changing saved classifications.
+Known projects appear even when they have zero tracked PRs.
+
+```sh
+~/.local/bin/work-tracker stats
+~/.local/bin/work-tracker stats --all-projects --days 30
+~/.local/bin/work-tracker stats --project Unallocated --since 2026-11-01 --until 2026-11-30 --json
+~/.local/bin/work-tracker stats --capture --wait
+```
+
+Each local calendar day records total tracked PRs, closures without a merge, merges, oldest observed open age, and mean/p90 closure time.
+Closure time runs from GitHub creation to that day's closure or merge. A PR contributes its latest observed closure once per day.
+Mean and p90 use only that day's completed PRs with valid timestamps. P90 uses nearest rank, and JSON durations use seconds.
+A day without timed closures has no mean or p90, not zero. The table shows sample coverage, stale observations, and missing dates.
+Counts marked `>=` are known lower bounds, not a claim of complete zero activity.
+
+The application owns a startup snapshot and a daily job at 00:05 local time.
+Refreshes, classification changes, ingestion, and successful close/merge actions also update today's provisional snapshot.
+Past inventory and project membership stay fixed. Late GitHub closure observations can correct that day's closure metrics for its recorded members.
+History starts with observed snapshots. Missed days remain gaps, and old inventory is not reconstructed from today's register.
+Closing the TUI does not stop collection. Reading statistics does not refresh GitHub or create snapshots.
+
 ## Configure local agents
 
 The local MCP launch command is:
@@ -175,6 +224,24 @@ Mutating tools require an `intent_key`. Reuse it for an identical retry.
 Reusing a key for different content fails rather than overwriting an earlier intent.
 Session links require explicit `tool`, `path`, `sessionId`, and `machine` values.
 The installer does not rewrite existing agent configuration.
+
+The installer also copies [the register-pr skill](skills/register-pr/SKILL.md) to
+`~/.agents/skills/register-pr/SKILL.md`. It registers a PR through MCP or the CLI,
+attaches verified creating-session identity, and reads back the saved record.
+It preserves existing metadata and never invents missing session IDs.
+It reports PR registration, reference attachment, and usable resume availability separately.
+It requires a native read-only session lookup before reporting a usable local action.
+Existing owned copies in `~/.fx/skills/register-pr` are updated during application installation, so an older copy cannot shadow the shared skill.
+
+Include this instruction in an agent task:
+
+```text
+After creating the PR, use the register-pr skill to register it with work-tracker
+and attach the verified creating session. Report any missing identity or tracking failure.
+```
+
+The broader `work-activity` skill remains available for reports and collection.
+If a skill at the target path is unrelated or symlinked, installation refuses to overwrite it.
 
 ## Application-owned scheduling
 

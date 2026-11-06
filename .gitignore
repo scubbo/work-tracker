@@ -32,6 +32,20 @@ app-config.json
 *.db
 *.db-*
 
+# Collected records and exported statistics are private data, not source.
+*.jsonl
+*.jsonl.gz
+*.ndjson
+*.csv
+*.tsv
+*.parquet
+*.arrow
+stats.json
+statistics.json
+daily-stats.json
+stats-history.json
+metrics.json
+
 # Local credentials and secret-scan reports.
 *.pem
 *.key

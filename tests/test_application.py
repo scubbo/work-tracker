@@ -80,6 +80,17 @@ class StoreTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.intent('attach_session', {'url': PR, 'session': {'tool': 'fx', 'sessionId': 'missing-path'}}, 'bad')
 
+    def test_standard_pr_metadata_is_persisted_and_retained_when_refresh_fails(self):
+        self.intent()
+        metadata = {'state': 'open', 'title': 'Cached title', 'createdAt': '2026-10-12T10:00:00Z'}
+        self.store.observe(PR, metadata, 'Awaiting review', 'No approval yet')
+        reopened = SQLiteStorage(self.store.path)
+        self.assertEqual(reopened.list_prs()[0]['github'], metadata)
+        reopened.observation_error(PR, 'GitHub unavailable')
+        cached = reopened.list_prs()[0]
+        self.assertEqual(cached['github']['title'], 'Cached title')
+        self.assertEqual(cached['github']['createdAt'], '2026-10-12T10:00:00Z')
+
     def test_classification_and_observations_preserve_user_intent(self):
         self.intent(payload={'url': PR, 'description': 'Why', 'project': 'Platform', 'workstream': 'Access'})
         self.store.observe(PR, {'state': 'open', 'title': 'New title'}, 'Ready to Merge', 'Confirmed')

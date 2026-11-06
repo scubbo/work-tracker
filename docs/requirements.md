@@ -84,7 +84,8 @@ related tracker records.
 The TUI supports local edits, not just browsing. It can manage the hierarchy,
 tasks, classification, links, and My Day. Jack subsequently requested a Close PR
 dialog with a comment box. This permits an explicitly confirmed close and comment
-on GitHub. It does not permit other GitHub mutations or Slack posting from the TUI.
+on GitHub. Jack later requested explicitly confirmed merging through `m`.
+Other GitHub mutations and Slack posting remain outside the TUI's approved scope.
 MCP remains local-intent only.
 
 Search initially covers tracker names, descriptions, notes, and stored links.
@@ -125,9 +126,25 @@ Unknown readiness blocks a Ready to Merge claim. Refresh failures retain prior
 observations but mark them stale and Blocked. The detailed policy is documented
 in `application.md`; CODEOWNERS explanations remain a follow-up.
 
+Jack later requested `m` as a single-key entry to merging from the PR list.
+The shortcut opens human confirmation, not an immediate write. It loads the current head and allowed merge methods from GitHub.
+The application must recheck readiness and the selected method, then use GitHub's head-SHA precondition.
+Do not enable auto-merge, bypass required queues, request branch deletion, or close the linked Task.
+Make clear that GitHub's own policy for automatic branch deletion still applies.
+Keep uncertain writes in a persistent ledger without automatic replay. Agent intents and MCP cannot request this GitHub mutation.
+
 A later agent hook can mark work as Implementing when Jack starts work on it.
 Do not implement the hook in the first version. Its relationship to review state
 still needs definition.
+
+## Daily PR statistics
+
+Jack requested daily overall and per-project history for total tracked PRs, closed/merged counts, oldest open age, and mean/p90 closure time.
+He selected PRs closed or merged on that day as the closure-time cohort, rather than cumulative completions.
+Unallocated must be a separate project bucket. Include zero-count buckets without changing existing classifications.
+Use observed GitHub creation and terminal timestamps. Expose missing and stale evidence instead of inventing durations or claiming zero activity.
+Preserve historical inventory and classification. Do not reconstruct missed inventory dates from the current register.
+The local application owns durable snapshots and timing. The TUI, CLI, and private API provide read-only history views.
 
 ## My Day
 
@@ -158,8 +175,19 @@ Retain machine context for paths that are meaningful only on a particular host.
 New TUI session references can be entered manually in the first version.
 Automatic discovery of sessions from additional tools is deferred.
 This does not remove existing OpenCode archive collection.
-Parsing new Slack messages into database updates and jumping back to an agent
-session are stretch goals. The basic link must not depend on either feature.
+Parsing new Slack messages into database updates remains a stretch goal.
+Jack subsequently requested a usable resume action for verified session references.
+Registration, reference attachment, and resume availability must remain distinct outcomes.
+The application can derive a quoted copy-resume command for fx and OpenCode without an invented URL.
+A native read-only lookup must confirm a local session before it is described as usable.
+The recorded machine and workspace constrain the action. Another machine receives labeled instructions, not a local launch.
+Unsupported or incomplete references stay intact and explicitly report no usable session link.
+The canonical register-pr skill must verify the action, not only the saved identity fields.
+Attaching a session reference never proves PR authorship.
+Jack subsequently requested a button that finds and activates an existing local herdr pane for an attached session.
+Search every running local herdr session. Require an exact live identity, tool, and workspace match on the recorded machine.
+Do not infer identity from titles, transcripts, or workspace alone. Do not start another agent or evaluate stored shell text.
+Keep the copy-resume command as a separate fallback. No match, an ambiguous match, or an inspection failure must leave that fallback available.
 
 ## Local agent MCP server
 

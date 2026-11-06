@@ -16,8 +16,11 @@ import work_activity as activity
 from .client import MAX_MESSAGE
 from .github import fetch_batch, open_inventory, review_status
 from .pr_closing import PRCloser
-from .scheduler import Scheduler, next_daily
+from .pr_merging import PRMerger
+from .scheduler import Scheduler, next_daily, daily_schedule
 from .storage import SQLiteStorage, now_iso
+from .session_actions import SessionActions, references
+from .herdr_sessions import HerdrSessions, FIELDS
 
 
 DEFAULT_CONFIG = {"archive_hour": 10, "archive_minute": 0, "refresh_seconds": 300, "automated_reviewers": []}
@@ -43,9 +46,14 @@ class Application:
         self.storage = storage or SQLiteStorage(self.root/"tracker.sqlite3")
         self.storage.import_legacy(self.root/"prs.json")
         self.storage.recover_closes()
+        self.storage.recover_merges()
         self.closer = PRCloser(self.storage, self.run, self.mutation_lock)
+        self.merger = PRMerger(self.storage, self.run, self.mutation_lock)
+        self.session_actions = SessionActions()
+        self.herdr_sessions = HerdrSessions()
         activity.write_json(self.root/"application.json", {"version": 1})
-        self.scheduler = Scheduler(self.storage, {"archive": self.archive, "refresh_prs": self.refresh_prs},
+        self.scheduler = Scheduler(self.storage, {"archive": self.archive, "refresh_prs": self.refresh_prs,
+                                                  "daily_stats": self.capture_statistics},
                                    self.config, activity.read_json(self.root/"checkpoints.json", {}), self.clock)
 
     @staticmethod
@@ -63,6 +71,18 @@ class Application:
     def mirror(self):
         # Compatibility export only. SQLite remains authoritative after migration.
         activity.write_json(self.root/"prs.json", self.storage.export_registry())
+
+    def capture_statistics(self, parameters):
+        if parameters:
+            raise ValueError('Statistics capture does not accept parameters')
+        return self.storage.capture_statistics(self.clock())
+
+    def _update_statistics(self):
+        try:
+            self.capture_statistics({})
+        except Exception as exc:
+            logging.warning('Daily statistics capture failed: %s', type(exc).__name__)
+            self.scheduler.queue('daily_stats')
 
     def refresh_prs(self, parameters):
         errors, refreshed = [], 0
@@ -109,6 +129,7 @@ class Application:
             self.storage.save_inventory({**previous, 'error': warning})
         with self.mutation_lock:
             self.mirror()
+        self._update_statistics()
         return {"ok": not errors, "refreshed": refreshed, "tracked": len(targets), "errors": errors,
                 "inventory_warning": warning,
                 "error": "Some GitHub observations could not be refreshed" if errors else None}
@@ -129,6 +150,7 @@ class Application:
         with self.mutation_lock:
             self.storage.merge_archive(github, hints["creation-evidence"], hints["messages"], expected_versions=versions)
             self.mirror()
+        self._update_statistics()
         ok = all(value["status"] == "ok" for value in manifest["sources"].values())
         return {"ok": ok, "manifest": manifest, "error": None if ok else "Collection has failed or partial sources"}
 
@@ -139,13 +161,25 @@ class Application:
             return {"state_directory": str(self.root), "storage": "sqlite", "pid": os.getpid(),
                     "config": self.config, "prs": len(self.storage.list_prs(state=None)),
                     "jobs": self.storage.jobs(), "inventory": self.storage.inventory(), "github_writes": True,
-                    "mcp_github_writes": False, "github_write_operations": ["confirmed_pr_close"]}
+                    "mcp_github_writes": False, "github_write_operations": ["confirmed_pr_close", "confirmed_pr_merge"]}
+        if method == 'statistics':
+            return self.storage.statistics(params, self.clock())
+        if method == 'capture_statistics':
+            if params:
+                raise ValueError('Statistics capture does not accept parameters')
+            return self.scheduler.queue('daily_stats')
         if method == "inventory":
             return self.storage.inventory()
         if method == "catalog":
             if params:
                 raise ValueError("Hierarchy suggestions do not accept write parameters")
             return self.storage.catalog()
+        if method == 'get_pr_sort':
+            if params:
+                raise ValueError('Reading PR sort does not accept parameters')
+            return self.storage.get_pr_sort()
+        if method == 'set_pr_sort':
+            return self.storage.set_pr_sort(params)
         if method == "jobs":
             return self.storage.jobs()
         if method == "list_prs":
@@ -159,17 +193,39 @@ class Application:
                 if value is not None and not isinstance(value, str):
                     raise ValueError("PR filters must be strings or null")
             values = self.storage.list_prs(**filters)
-            return {"total": len(values), "items": values[offset:offset+limit], "limit": limit, "offset": offset,
-                    "inventory": self.storage.inventory()}
+            return {"total": len(values), "items": [self.session_actions.project(value) for value in values[offset:offset+limit]],
+                    "limit": limit, "offset": offset, "inventory": self.storage.inventory()}
         if method == "get_pr":
+            if set(params) - {'url', 'verify_sessions'} or type(params.get('verify_sessions', False)) is not bool:
+                raise ValueError('PR lookup accepts url and a boolean verify_sessions only')
             url = activity.pr_url(params.get("url", ""))
             values = self.storage.list_prs(state=None)
-            return next((value for value in values if value["url"] == url), None)
+            value = next((value for value in values if value["url"] == url), None)
+            return self.session_actions.project(value, params.get('verify_sessions', False)) if value else None
+        if method in ('activate_session_pane', 'find_session_pane'):
+            if set(params) != {'url', 'reference'} or not isinstance(params['reference'], dict) or set(params['reference']) != set(FIELDS):
+                raise ValueError('Pane activation requires a PR URL and an exact four-field session reference')
+            url = activity.pr_url(params['url'])
+            record = next((value for value in self.storage.list_prs(state=None) if value['url'] == url), None)
+            if not record or params['reference'] not in references(record):
+                raise ValueError('This session reference is no longer attached to the PR')
+            operation = self.herdr_sessions.find if method == 'find_session_pane' else self.herdr_sessions.activate
+            return operation(params['reference'])
+        if method == 'merge_preview':
+            return self.merger.preview(params)
+        if method in ('merge_pr', 'merge_result'):
+            result = self.merger.merge(params) if method == 'merge_pr' else self.merger.result(params)
+            if result['status'] in ('succeeded', 'already_merged'):
+                with self.mutation_lock:
+                    self.mirror()
+                self._update_statistics()
+            return result
         if method in ('close_pr', 'close_result'):
             result = self.closer.close(params) if method == 'close_pr' else self.closer.result(params)
             if result['status'] in ('succeeded', 'already_closed'):
                 with self.mutation_lock:
                     self.mirror()
+                self._update_statistics()
             return result
         if method == "intent":
             if set(params) - {"key", "kind", "payload", "source"}:
@@ -178,6 +234,15 @@ class Application:
                 result = self.storage.apply_intent(params.get("key"), params.get("kind"),
                                                    params.get("payload"), params.get("source", {}))
                 self.mirror()
+                if params.get('kind') in ('register_pr', 'update_pr'):
+                    self._update_statistics()
+                if params.get('kind') in ('register_pr', 'attach_session'):
+                    record = self.dispatch('get_pr', {'url': result['url']})
+                    result['tracking-outcomes'] = record['tracking-outcomes']
+                    result['agent-session-actions'] = record['agent-session-actions']
+                    if params.get('kind') == 'attach_session':
+                        result['session_reference'] = 'attached'
+                        result['note'] = 'Reference attached. This is not proof of PR authorship or a usable session link.'
                 return result
         if method == "refresh":
             if params:
@@ -196,7 +261,7 @@ class Application:
                 for job in self.storage.jobs():
                     if job["status"] != "running":
                         name = job.pop("name")
-                        job["next_run"] = next_daily(self.clock(), config["archive_hour"], config["archive_minute"]) if name == "archive" else now_iso()
+                        job["next_run"] = next_daily(self.clock(), *daily_schedule(name, config)) if daily_schedule(name, config) else now_iso()
                         self.storage.save_job(name, job)
                 self.scheduler.wake.set()
             return self.config
@@ -228,7 +293,7 @@ class Application:
         if command == "show":
             if url not in registry:
                 raise ValueError("PR is not registered")
-            return registry[url]
+            return self.session_actions.project(registry[url])
         payload = {"url": url}
         if command == "set":
             for name in ("project", "description"):

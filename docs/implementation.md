@@ -155,9 +155,9 @@ read-only RPC guard. No real GitHub comment or close was performed for testing.
 
 The first Open PR TUI is implemented in Textual, backed by the same local
 application as CLI and MCP. My Day and broader project/workstream management
-views remain unimplemented. Detailed CODEOWNERS explanations, tags, agent hooks, session
-reopening, full conversation search, remote storage, and multi-user work remain
-follow-ups from the interview.
+views remain unimplemented. Detailed CODEOWNERS explanations, tags, agent hooks,
+additional session adapters, internal-instance selection, full conversation search,
+remote storage, and multi-user work remain follow-ups from the interview.
 
 Tests drive clock boundaries deterministically. Verification did not wait for
 a natural future 10:00 run.
@@ -165,3 +165,61 @@ a natural future 10:00 run.
 Jack later requested the initial commit and push, and selected a public
 `scubbo/work-tracker` repository. Publication excludes private activity,
 credentials, runtime state, and local scan reports. No license is selected.
+
+## Sorting, clipboard, and session actions checkpoint
+
+The PR view retains ascending full-URL order by default. Header clicks and F2
+select a column and direction. Unknown dates stay last, and refreshes preserve
+sorting and selection. The `p` shortcut copies the selected PR URL. macOS uses
+`pbcopy` with standard input, without shell interpolation.
+
+Session reference attachment and usable resume availability are separate outcomes
+in RPC, MCP, CLI, full details, and the canonical register-pr skill. The application
+derives commands from the existing identity fields. Explicit fx and OpenCode
+adapters perform native read-only identity checks before a local action is ready.
+Foreign machines receive labeled instructions without local inspection. Unknown
+tools and incomplete or unsafe identities retain their references without a usable action.
+Legacy OpenCode source-session records remain intact, and stored commands are ignored.
+
+The fx command shape was confirmed through installed help and the
+[fx session documentation](https://fx.sh/docs/using-fx/sessions).
+The application never resumes a conversation during verification. The UI checks
+and copies a command for the user to run in the recorded workspace.
+
+Verification: `.venv/bin/python -m unittest discover -s tests -v` passed 146 tests,
+exit 0. The six socket/MCP interface checks also passed after adding the explicit
+verification option to the SDK roundtrip. Temporary-home installer tests cover
+updates to the shared skill and an existing owned fx copy, without replacing an
+unrelated skill.
+
+Installation with `.venv/bin/python install.py --load` passed, exit 0. A private
+read-only RPC snapshot confirmed preservation of all saved PR metadata and schedule
+configuration. Installed modules and both installed skill copies matched source.
+The installed CLI and actual UI copy button confirmed an existing fx session,
+with exactly one original attachment. The installed UI also sorted and copied the
+PR URL. A captured clipboard avoided overwriting the user's clipboard. No real
+agent conversation was launched and no GitHub write was used.
+
+## PR workflow and daily statistics checkpoint
+
+The Opened column uses cached creation timestamps. Sorting now persists through
+application-owned preferences. The session view shows saved references and safe
+copy-resume actions. Its activation button identifies and focuses a matching
+existing local herdr pane without starting another agent.
+
+The `m` shortcut opens a merge confirmation for the previewed head commit and an
+allowed method. Schema 4 adds a durable merge ledger, restart recovery, and checks
+that prevent conflicting pending close and merge operations.
+MCP remains intent-only. No live GitHub merge was used for verification.
+
+Schema 5 adds daily snapshots, observed closure events, and overall/per-project
+statistics. Mean and nearest-rank p90 use each local day's closure cohort.
+Unallocated is a separate bucket, including zero counts. Historical membership
+stays fixed, and missing days remain gaps rather than reconstructed inventory.
+The application owns daily collection. F3 and `work-tracker stats` read it.
+
+The complete deterministic suite passed 234 tests with exit 0. Installed CLI,
+private API, TUI controls, native herdr acknowledgments, and automatic statistics
+capture passed focused checks. Verification preserved private metadata, links,
+hierarchy, pending actions, scheduling configuration, and sort preferences.
+Public notes omit live PR records, session identities, and activity totals.
