@@ -60,7 +60,7 @@ class PRActionTUITests(unittest.IsolatedAsyncioTestCase):
         await pilot.pause()
 
     def app(self, api):
-        return WorkTrackerApp(Path('/tmp/no-pr-action-database'), rpc=api, poll_interval=0)
+        return WorkTrackerApp(Path('/tmp/no-pr-action-database'), rpc=api, poll_interval=0, start_view='prs')
 
     async def test_listing_contains_state_age_and_unknown_history(self):
         api = ClosingAPI()

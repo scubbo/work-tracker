@@ -39,7 +39,7 @@ class PaneActivationTests(unittest.IsolatedAsyncioTestCase):
         self.addCleanup(self.temp.cleanup)
         self.api = PaneAPI(self.temp.name)
         self.copied = []
-        self.app = WorkTrackerApp(Path('/tmp/not-a-datastore'), rpc=self.api, poll_interval=0,
+        self.app = WorkTrackerApp(Path('/tmp/not-a-datastore'), rpc=self.api, poll_interval=0, start_view='prs',
                                   clipboard_writer=self.copied.append)
 
     async def click(self, pilot, selector):

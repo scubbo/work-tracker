@@ -162,6 +162,13 @@ class Application:
                     "config": self.config, "prs": len(self.storage.list_prs(state=None)),
                     "jobs": self.storage.jobs(), "inventory": self.storage.inventory(), "github_writes": True,
                     "mcp_github_writes": False, "github_write_operations": ["confirmed_pr_close", "confirmed_pr_merge"]}
+        if method == 'my_day':
+            return self.storage.my_day(params, self.clock())
+        if method == 'day_targets':
+            return self.storage.day_targets(params)
+        if method == 'day_intent':
+            with self.mutation_lock:
+                return self.storage.apply_day_intent(params, self.clock())
         if method == 'statistics':
             return self.storage.statistics(params, self.clock())
         if method == 'capture_statistics':

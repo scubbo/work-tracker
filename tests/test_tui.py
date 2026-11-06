@@ -165,7 +165,7 @@ class TUITests(unittest.IsolatedAsyncioTestCase):
         await pilot.pause()
 
     def app(self, api, **kwargs):
-        return WorkTrackerApp(Path('/tmp/not-a-tui-datastore'), rpc=api, poll_interval=0, **kwargs)
+        return WorkTrackerApp(Path('/tmp/not-a-tui-datastore'), rpc=api, poll_interval=0, start_view='prs', **kwargs)
 
     async def test_initial_view_pages_all_tracked_records_without_starting_jobs_or_database(self):
         rows = [record()] + [record(1000+i, f'PR {i}') for i in range(449)]
@@ -294,7 +294,7 @@ class TUITests(unittest.IsolatedAsyncioTestCase):
                 started.set()
                 release.wait(2)
             return api(root, method, params)
-        app = WorkTrackerApp(Path('/tmp/no-tui-store'), rpc=delayed, poll_interval=0)
+        app = WorkTrackerApp(Path('/tmp/no-tui-store'), rpc=delayed, poll_interval=0, start_view='prs')
         async with app.run_test(size=(140, 40)) as pilot:
             await self.settle(app, pilot)
             await pilot.press('e')
@@ -547,7 +547,7 @@ class TUITests(unittest.IsolatedAsyncioTestCase):
                 with lock:
                     active -= 1
                     completed += 1
-        app = WorkTrackerApp(Path('/tmp/no-tui-store'), rpc=slow, poll_interval=0.01)
+        app = WorkTrackerApp(Path('/tmp/no-tui-store'), rpc=slow, poll_interval=0.01, start_view='prs')
         async with app.run_test(size=(140, 40)) as pilot:
             await pilot.pause(0.35)
             self.assertTrue(app.connected)
@@ -557,7 +557,7 @@ class TUITests(unittest.IsolatedAsyncioTestCase):
 
     async def test_refresh_is_explicit_while_periodic_view_poll_is_local_only(self):
         api = FakeAPI()
-        app = WorkTrackerApp(Path('/tmp/no-tui-store'), rpc=api, poll_interval=0.08)
+        app = WorkTrackerApp(Path('/tmp/no-tui-store'), rpc=api, poll_interval=0.08, start_view='prs')
         async with app.run_test(size=(140, 40)) as pilot:
             await self.settle(app, pilot)
             await pilot.pause(0.2)

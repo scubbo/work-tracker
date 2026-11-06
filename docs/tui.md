@@ -1,8 +1,7 @@
-# Open PR TUI
+# Work tracker TUI
 
-Jack approved Textual after the headless application checkpoint and asked to
-start TUI implementation. This first client covers open PR tracking.
-My Day and standalone project/workstream management screens are not included yet.
+The Textual client opens My Day for daily planning. F4 switches to the open-PR workflow.
+Standalone project/workstream management remains a follow-up. The application owns all data and scheduled jobs.
 
 ## Start the interface
 
@@ -21,6 +20,28 @@ For source development, run:
 
 Put `--state-dir PATH` before `tui` to select an isolated application endpoint.
 Closing the TUI does not stop the application or its jobs.
+
+## My Day home view
+
+The home view has Goals, Awareness, and Carry forward tabs. The day comes from the application's local calendar.
+F4 or PRs switches to the PR list. F3 opens daily statistics. Escape returns to PRs, and `q` quits only the TUI.
+Use Previous and Next for read-only history. Today follows the current local date, including after midnight.
+
+Press `a` to add a goal or `w` to add persistent awareness. Quick text creates an Unclassified Task.
+Choose Existing Task or Existing workstream to search known targets. An optional label describes the daily outcome without renaming its target.
+Space changes only a daily goal's Open/Done state. `e` edits its label, and Delete removes it from today's plan without deleting the Task.
+For awareness, Delete dismisses the persistent watch item. It stays visible on later days until dismissed.
+
+Carry forward never runs automatically. Select a candidate in that tab and press `c` to create today's linked item.
+The source day remains unchanged. Suggestions use the latest prior goal for each target, so completing a carried item does not revive older ancestors.
+Linked PRs opens a picker of cached references and then full tracker details. A Task without a PR remains a valid target.
+The picker shows up to the first 50 cached PR links for a target. Workstream classification links return to the filtered PR list.
+
+From the PR list, `a` opens an add-goal form for the selected PR's existing Task.
+Forms retain one key and frozen payload after a lost response. Retry repeats that request, not a new Task creation.
+Item edits carry version preconditions. A conflicting edit reloads rather than overwriting another client.
+If the calendar day changes, reopen an unsent old-day form. History is not silently rewritten.
+No planning action changes GitHub or closes the linked Task/workstream. My Day has no MCP tools in this version.
 
 ## Browse tracked work
 
@@ -67,6 +88,8 @@ A failed connection is not shown as zero PRs. Editing is disabled until reconnec
 | `e` or Edit | Edit local description and project/workstream classification |
 | `x` or Close PR | Open the GitHub close dialog with an optional multiline comment |
 | `m` | Open merge confirmation for the selected PR |
+| `a` in the PR list | Add the selected PR's Task to today |
+| F4 | Switch between My Day and the PR list |
 | `n` or Track PR | Explicitly ingest an existing GitHub PR URL |
 | Links | Choose a local reference action with the mouse or keyboard |
 | `t` | Attach a Slack thread |

@@ -154,8 +154,8 @@ read-only RPC guard. No real GitHub comment or close was performed for testing.
 ## Remaining work
 
 The first Open PR TUI is implemented in Textual, backed by the same local
-application as CLI and MCP. My Day and broader project/workstream management
-views remain unimplemented. Detailed CODEOWNERS explanations, tags, agent hooks,
+application as CLI and MCP. My Day now provides local daily planning through the
+TUI and CLI. Broader project/workstream management views remain unimplemented. Detailed CODEOWNERS explanations, tags, agent hooks,
 additional session adapters, internal-instance selection, full conversation search,
 remote storage, and multi-user work remain follow-ups from the interview.
 
@@ -223,3 +223,21 @@ private API, TUI controls, native herdr acknowledgments, and automatic statistic
 capture passed focused checks. Verification preserved private metadata, links,
 hierarchy, pending actions, scheduling configuration, and sort preferences.
 Public notes omit live PR records, session identities, and activity totals.
+
+## My Day checkpoint
+
+Jack selected My Day as the home view, simple Open/Done goals, and TUI/CLI access only.
+Schema 6 adds day items and an idempotency ledger without changing existing PR, statistics, reference, or operation records.
+Quick-add creates a Task under Unclassified. Existing Tasks, workstreams, and tracked PR Tasks can be linked directly.
+Daily completion and label edits do not close or rename their targets. Awareness persists until dismissed.
+
+Carry-forward is explicit and preserves its source day. Latest completed or removed descendants suppress stale older suggestions.
+History is read-only. The application calendar rejects unsent stale-day writes, while exact recorded retries remain valid across midnight.
+Item versions reject concurrent stale edits. Task creation, plan changes, and receipts use one transaction.
+My Day exposes no MCP tools and performs no GitHub mutations.
+
+The PR list remains available through F4 or `tui --view prs`. Its `a` shortcut links the selected PR's existing Task.
+Tests cover the default home view, literal labels, target selection, daily versus persistent state, explicit carry-forward,
+unknown responses, unchanged request keys, midnight changes, version conflicts, migrations, and the real application socket.
+Synthetic planning tests use isolated temporary state. Verification does not seed the live user's day plan.
+The complete deterministic suite passed 257 tests with exit 0.

@@ -16,7 +16,12 @@ application-owned jobs, MCP adapter, CLI, and safe installer migration implement
 that first slice. Read `docs/application.md` for the actual runtime boundary.
 Jack then approved Textual and asked to start TUI implementation.
 The first Open PR TUI is implemented in `work_tracker/tui.py` and `tui_forms.py`.
-My Day and standalone project/workstream management views remain follow-ups.
+My Day is the TUI home view, with Open/Done goals, persistent awareness, and
+explicit carry-forward. Quick-add creates an Unclassified Task. Completing a day
+item must not close its Task, workstream, or PR. Past goal history is read-only.
+My Day is available through the TUI and CLI only, not MCP. Keep the PR list
+available through F4 and allow its selected PR Task to be added with `a`.
+Standalone project/workstream management views remain follow-ups.
 Do not implement a remote backend without the relevant discussion.
 
 Jack later requested elapsed time since state changes and a Close PR dialog.

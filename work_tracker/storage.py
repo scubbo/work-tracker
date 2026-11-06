@@ -31,6 +31,9 @@ class Storage(Protocol):
     def apply_intent(self, key: str, kind: str, payload: dict, source: dict) -> dict: ...
     def list_prs(self, **filters) -> list: ...
     def catalog(self) -> dict: ...
+    def my_day(self, params: dict, now: datetime) -> dict: ...
+    def day_targets(self, params: dict) -> dict: ...
+    def apply_day_intent(self, params: dict, now: datetime) -> dict: ...
     def capture_statistics(self, now: datetime) -> dict: ...
     def statistics(self, params: dict, now: datetime) -> dict: ...
     def get_pr_sort(self) -> dict: ...
@@ -59,7 +62,7 @@ class SQLiteStorage:
         self.path.parent.chmod(0o700)
         with self._connection() as db:
             version = db.execute("PRAGMA user_version").fetchone()[0]
-            if version not in (0, 1, 2, 3, 4, 5):
+            if version not in (0, 1, 2, 3, 4, 5, 6):
                 raise ValueError(f"Unsupported database schema {version}; refusing to change it")
             db.execute("PRAGMA journal_mode=WAL")
             db.executescript("""
@@ -107,13 +110,27 @@ class SQLiteStorage:
                 CREATE TABLE IF NOT EXISTS stats_metrics(
                     day TEXT NOT NULL REFERENCES stats_days(day), project_id TEXT NOT NULL, payload TEXT NOT NULL,
                     PRIMARY KEY(day,project_id));
+                CREATE TABLE IF NOT EXISTS my_day_items(
+                    id TEXT PRIMARY KEY, kind TEXT NOT NULL CHECK(kind IN ('goal','awareness')),
+                    day TEXT NOT NULL, target_kind TEXT NOT NULL CHECK(target_kind IN ('task','workstream')),
+                    target_id TEXT NOT NULL, label TEXT NOT NULL, done INTEGER NOT NULL DEFAULT 0,
+                    removed INTEGER NOT NULL DEFAULT 0, dismissed_day TEXT, position INTEGER NOT NULL,
+                    version INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+                    carried_from TEXT REFERENCES my_day_items(id));
+                CREATE UNIQUE INDEX IF NOT EXISTS my_day_goal_target
+                    ON my_day_items(day,target_kind,target_id) WHERE kind='goal';
+                CREATE UNIQUE INDEX IF NOT EXISTS my_day_active_awareness
+                    ON my_day_items(target_kind,target_id) WHERE kind='awareness' AND dismissed_day IS NULL AND removed=0;
+                CREATE TABLE IF NOT EXISTS my_day_intents(
+                    key TEXT PRIMARY KEY, action TEXT NOT NULL, payload TEXT NOT NULL,
+                    source TEXT NOT NULL, receipt TEXT NOT NULL, created_at TEXT NOT NULL);
             """)
             columns = {row[1] for row in db.execute('PRAGMA table_info(prs)')}
             for name, definition in (('state_changed_at', 'TEXT'), ('state_first_seen_at', 'TEXT'),
                                      ('observation_version', 'INTEGER NOT NULL DEFAULT 0')):
                 if name not in columns:
                     db.execute(f'ALTER TABLE prs ADD COLUMN {name} {definition}')
-            db.execute('PRAGMA user_version=5')
+            db.execute('PRAGMA user_version=6')
             self._workstream(db, UNCLASSIFIED, UNCLASSIFIED)
             db.commit()
 
@@ -316,6 +333,18 @@ class SQLiteStorage:
                 projects.append({"id": row["id"], "name": row["name"], "closed": bool(row["closed"]),
                                  "workstreams": workstreams})
             return {"projects": projects}
+
+    def my_day(self, params, now):
+        from .my_day import MyDayStore
+        return MyDayStore(self).read(params, now)
+
+    def day_targets(self, params):
+        from .my_day import MyDayStore
+        return MyDayStore(self).targets(params)
+
+    def apply_day_intent(self, params, now):
+        from .my_day import MyDayStore
+        return MyDayStore(self).apply(params, now)
 
     def capture_statistics(self, now):
         from .stats_store import DailyStatsStore

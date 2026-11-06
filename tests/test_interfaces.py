@@ -71,6 +71,21 @@ class InterfaceTests(unittest.TestCase):
             request(self.root, 'intent', {'key': 'spoof', 'kind': 'update_pr',
                                           'payload': {'url': PR, 'state': 'merged'}})
 
+    def test_my_day_roundtrip_uses_the_application_socket_without_creating_a_pr(self):
+        view=request(self.root,'my_day')
+        payload={'day':view['today'],'kind':'goal','text':'Socket day outcome'}
+        params={'key':'day-socket','action':'add','payload':payload,'source':{'client':'test'}}
+        first=request(self.root,'day_intent',params)
+        self.assertTrue(request(self.root,'day_intent',params)['duplicate'])
+        item=request(self.root,'my_day')['goals'][0]
+        self.assertEqual(item['id'],first['item_id'])
+        request(self.root,'day_intent',{'key':'done-socket','action':'set_done',
+            'payload':{'day':view['today'],'item_id':item['id'],'expected_version':item['version'],'done':True},'source':{'client':'test'}})
+        self.assertTrue(request(self.root,'my_day')['goals'][0]['done'])
+        self.assertEqual(request(self.root,'status')['prs'],0)
+        self.assertEqual(request(self.root,'day_targets',{'search':'Socket day outcome'})['total'],1)
+        with self.assertRaises(ValueError): request(self.root,'day_intent',{**params,'shell':'anything'})
+
     def test_daily_statistics_are_readable_and_snapshot_jobs_belong_to_the_application(self):
         request(self.root,'intent',{'key':'stats-fixture','kind':'register_pr','payload':{'url':PR,'project':'Alpha'}})
         before=request(self.root,'get_pr',{'url':PR})
@@ -131,6 +146,9 @@ class InterfaceTests(unittest.TestCase):
                 self.assertNotIn('merge_pr', names)
                 self.assertNotIn('merge_result', names)
                 self.assertNotIn('merge_preview', names)
+                self.assertNotIn('my_day', names)
+                self.assertNotIn('day_intent', names)
+                self.assertNotIn('day_targets', names)
                 self.assertEqual(len(names), 8)
                 payload = {'url': PR, 'intent_key': 'from-agent', 'description': 'Why this matters'}
                 result = await client.call_tool('submit_pr', payload)
@@ -165,7 +183,7 @@ class InterfaceTests(unittest.TestCase):
         before = request(self.root, 'get_pr', {'url': PR})
         pid = request(self.root, 'status')['pid']
         async def exercise():
-            first = WorkTrackerApp(self.root, poll_interval=0)
+            first = WorkTrackerApp(self.root, poll_interval=0, start_view='prs')
             async with first.run_test(size=(100, 32)) as pilot:
                 await first.workers.wait_for_complete()
                 await pilot.pause()
@@ -176,7 +194,7 @@ class InterfaceTests(unittest.TestCase):
                 await pilot.click('#sort-apply')
                 await pilot.press('q')
             self.assertEqual(request(self.root, 'get_pr_sort'), {'field': 'opened', 'descending': True})
-            second = WorkTrackerApp(self.root, poll_interval=0)
+            second = WorkTrackerApp(self.root, poll_interval=0, start_view='prs')
             async with second.run_test(size=(100, 32)) as pilot:
                 await second.workers.wait_for_complete()
                 await pilot.pause()
@@ -196,7 +214,7 @@ class InterfaceTests(unittest.TestCase):
                                      'payload': {'url': PR, 'description': 'Before UI'}})
         pid = request(self.root, 'status')['pid']
         async def exercise():
-            app = WorkTrackerApp(self.root, poll_interval=0)
+            app = WorkTrackerApp(self.root, poll_interval=0, start_view='prs')
             async with app.run_test(size=(140, 40)) as pilot:
                 await app.workers.wait_for_complete()
                 await pilot.pause()

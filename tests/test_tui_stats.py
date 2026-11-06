@@ -34,7 +34,7 @@ class StatsTUITests(unittest.IsolatedAsyncioTestCase):
         self.temp=tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.api=StatsAPI(self.temp.name)
-        self.app=WorkTrackerApp(Path('/tmp/not-a-statistics-datastore'),rpc=self.api,poll_interval=0)
+        self.app=WorkTrackerApp(Path('/tmp/not-a-statistics-datastore'),rpc=self.api,poll_interval=0,start_view='prs')
 
     async def test_f3_opens_saved_history_without_capture_or_external_queries(self):
         async with self.app.run_test(size=(80,24)) as pilot:

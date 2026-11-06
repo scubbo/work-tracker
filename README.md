@@ -3,8 +3,8 @@
 Work tracker is a local application that owns a SQLite datastore and scheduled
 jobs. The Textual TUI, CLI, and stdio MCP server call that application over a
 private Unix socket. They do not open the database or run their own schedulers.
-The first TUI covers open PR tracking. My Day and standalone project/workstream
-management views remain follow-ups.
+The TUI opens My Day for daily goals and persistent awareness items. F4 switches
+to the open-PR workflow. Standalone project/workstream management remains a follow-up.
 
 The first slice refreshes only PRs already ingested into the tracker. It supports
 review/readiness status, local agent intent, project/workstream classification,
@@ -169,6 +169,38 @@ The `work-activity` CLI remains available for daily-summary integrations.
 After SQLite migration it calls the application. It does not silently fall back
 to editing JSON if the application is unavailable. `prs.json` becomes a
 compatibility export, not the authoritative register.
+
+## My Day
+
+The TUI opens My Day by default. F4 switches between My Day and the PR list.
+Use `work-tracker tui --view prs` to start directly with PRs. From that list, `a` links the selected PR's existing Task to today.
+
+My Day separates daily goals, persistent awareness, and unfinished carry-forward candidates.
+Add a goal with `a`, add awareness with `w`, and use Space to switch a goal between Open and Done.
+Quick text creates a Task in the general Unclassified project/workstream. Existing Tasks and workstreams are searchable targets.
+A day label can describe a specific outcome without renaming its underlying Task or workstream.
+Completion affects only that day's item. It never closes a Task, workstream, or PR.
+
+Awareness persists until explicitly dismissed. In the Carry forward tab, choose an unfinished prior goal and press `c`.
+The application creates a new daily item linked to the same target, without modifying the source day or copying anything automatically.
+After a carried goal is completed, its older unfinished ancestors are not suggested again.
+Previous and Next browse read-only history. Today returns to the application's current local calendar day.
+Midnight invalidates unsent old-day edits rather than assigning them silently to another day.
+
+```sh
+~/.local/bin/work-tracker day
+~/.local/bin/work-tracker day add 'Finish the review' --key plan-review
+~/.local/bin/work-tracker day add 'Watch the rollout' --awareness --key watch-rollout
+~/.local/bin/work-tracker day targets --search 'review'
+~/.local/bin/work-tracker day add --pr https://github.com/owner/repo/pull/123 --key plan-pr
+~/.local/bin/work-tracker day done ITEM_ID --key complete-goal
+~/.local/bin/work-tracker day --date 2026-11-05 --json
+```
+
+CLI output includes item IDs and versions. Use `reopen`, `edit`, `remove`, `dismiss`, or `carry` for explicit local changes.
+Reuse the same key and payload after an uncertain response. Stale versions fail instead of overwriting another client's edits.
+My Day is available through the TUI and CLI only. No My Day MCP tool is exposed, and planning never writes to GitHub.
+Day plans stay in private application storage, not in Git or a separate TUI database.
 
 ## Daily PR statistics
 

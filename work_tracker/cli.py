@@ -9,6 +9,7 @@ import uuid
 from .client import default_state, request, wait_for_job
 from .state_age import state_age
 from .daily_stats import duration_text
+from .day_cli import configure as configure_day, run as run_day
 
 
 def terminal_text(value):
@@ -22,11 +23,13 @@ def main(argv=None):
     server = commands.add_parser("serve", help="Run the local application and its own scheduler")
     server.add_argument("--no-jobs", action="store_true", help="Disable job execution for isolated tests")
     commands.add_parser("mcp", help="Run the stdio MCP adapter; the application must already be running")
-    commands.add_parser("tui", help="Open the Textual interface onto the local application")
+    tui = commands.add_parser("tui", help="Open the Textual interface onto the local application")
+    tui.add_argument('--view', choices=('day','prs'), default='day', help='Start with My Day (default) or the PR list')
     commands.add_parser("status")
     commands.add_parser("jobs")
     commands.add_parser("inventory", help="Read account-wide counts without enrolling untracked PRs")
     commands.add_parser("stop")
+    configure_day(commands)
     stats = commands.add_parser('stats', help='Read daily overall or per-project PR history')
     stats.add_argument('--since')
     stats.add_argument('--until')
@@ -91,10 +94,14 @@ def main(argv=None):
                 from .tui import run
             except ImportError as exc:
                 raise RuntimeError("Textual is missing. Install requirements.lock or reinstall work-tracker.") from exc
-            run(root)
+            run(root, start_view=args.view)
             return 0
         if args.command in ("status", "jobs", "inventory", "stop"):
             result = request(root, args.command)
+        elif args.command == 'day':
+            result = run_day(root,args,request)
+            if result is None:
+                return 0
         elif args.command == 'stats':
             if args.capture:
                 queued = request(root, 'capture_statistics')

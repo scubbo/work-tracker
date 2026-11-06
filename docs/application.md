@@ -100,6 +100,29 @@ Missing, ambiguous, remote, changed, or unverified targets never trigger an arbi
 Native calls use argument arrays, regular-file capture, and a shared deadline shorter than the client timeout.
 The TUI only requests this operation. It does not inspect processes or control herdr directly.
 
+## My Day planning
+
+Schema 6 adds private day items and a separate idempotency ledger. Existing PRs, Tasks, references, statistics, and operation ledgers stay intact.
+The private `my_day` read accepts an optional local calendar date. `day_targets` searches existing Tasks and workstreams with cached PR links.
+`day_intent` accepts explicitly validated local planning actions with a stable key, complete payload, and source metadata.
+These operations are not MCP tools. The CLI and TUI call the application rather than opening SQLite.
+
+Quick-add creates a Task and its day item in one transaction under the general Unclassified project/workstream.
+A tracked PR resolves to its stable Task, not a duplicate Task. Workstreams can also be linked directly.
+A target has at most one daily goal for a day and one active awareness item. Repeated additions reuse the link.
+Daily labels are separate from target titles. Open/Done, editing, removal, and dismissal never mutate target lifecycle or GitHub state.
+
+Goals belong to one local calendar day. Past goal history is read-only. Awareness stays active until its explicit dismissal day.
+Carry-forward creates a new item for today with a source link. It preserves the earlier row and never closes the underlying Task.
+Suggestions use the latest prior goal per target. Completed or removed descendants suppress stale ancestors, including across gaps between planning days.
+Reads and calendar rollover create no goals. An old-day write with a new key fails after midnight.
+An identical retry with a recorded key returns its original receipt even after midnight.
+
+All item edits require the observed version. Unknown targets, unsupported fields/actions, control characters, and stale writes fail before commit.
+Task creation, item changes, and the receipt commit atomically. A failed add cannot leave an orphan Task.
+The TUI home screen uses independent read-only polling. Existing PR shortcuts cannot act on a hidden PR selection while My Day or its forms are active.
+The PR list remains available through F4 or `tui --view prs`, including its persisted sort preference.
+
 ## Daily PR statistics
 
 Schema 5 adds daily inventory membership, observed closure events, and aggregate rows to the application-owned SQLite database.

@@ -25,8 +25,8 @@ read-only PR discovery/readiness, typed agent intents, and stdio MCP.
 Project/workstream classification and stable Tasks are present in the PR path.
 Manual multi-tool session references and Slack links are supported.
 The first Textual TUI implements the open-PR workflow, local metadata editing,
-manual references, live details, and context filters. Broader hierarchy management
-views and My Day remain follow-ups. See `tui.md` and `application.md` for the
+manual references, live details, and context filters. My Day adds local daily planning
+through TUI and CLI. Broader hierarchy management views remain follow-ups. See `tui.md` and `application.md` for the
 current scope, architecture, and limitations.
 
 The installer now generates a process-supervision LaunchAgent without job times.
@@ -160,6 +160,10 @@ Awareness items persist until dismissed. Goals are selected afresh each day.
 Offer yesterday's unfinished goals for explicit carry-forward rather than
 copying them automatically. Completing a goal affects only that day's item,
 not its linked task or workstream.
+
+Jack selected My Day as the TUI's home view. Daily goals use Open/Done, not an additional progress workflow.
+The first implementation exposes My Day through the TUI and CLI only. Do not add My Day MCP tools.
+Keep the PR list available as a separate view, and provide a shortcut to add its selected PR's Task to today.
 
 ## Slack and agent-session links
 

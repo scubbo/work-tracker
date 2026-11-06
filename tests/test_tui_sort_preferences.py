@@ -13,7 +13,7 @@ from work_tracker.tui import WorkTrackerApp
 
 class SortPreferenceTUITests(unittest.IsolatedAsyncioTestCase):
     def app(self, api):
-        return WorkTrackerApp(Path('/tmp/not-a-datastore'), rpc=api, poll_interval=0, clipboard_writer=lambda value: None)
+        return WorkTrackerApp(Path('/tmp/not-a-datastore'), rpc=api, poll_interval=0, clipboard_writer=lambda value: None, start_view='prs')
 
     async def test_f2_selection_is_restored_by_a_fresh_tui_without_restoring_filters(self):
         api = FakeAPI()

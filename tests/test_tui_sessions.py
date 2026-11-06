@@ -16,7 +16,7 @@ def text(screen, selector):
 
 class SessionScreenTests(unittest.IsolatedAsyncioTestCase):
     def app(self, api, copied=None):
-        return WorkTrackerApp(Path('/tmp/not-a-datastore'), rpc=api, poll_interval=0,
+        return WorkTrackerApp(Path('/tmp/not-a-datastore'), rpc=api, poll_interval=0, start_view='prs',
                               clipboard_writer=(copied if copied is not None else []).append)
 
     async def test_s_shows_saved_identity_instead_of_a_blank_attach_form(self):

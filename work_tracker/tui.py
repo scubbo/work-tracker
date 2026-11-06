@@ -23,6 +23,8 @@ from .tui_forms import IntentForm
 from .tui_close import ClosePRScreen
 from .tui_merge import MergePRScreen
 from .tui_stats import StatisticsScreen
+from .tui_day import MyDayScreen
+from .tui_day_forms import DayItemForm
 from .state_age import state_age
 from .clipboard import copy_macos
 from .tui_sort import COLUMN_LABELS, SORT_FIELDS, SortScreen, ordered_rows
@@ -212,6 +214,7 @@ class WorkTrackerApp(App):
                 Binding('s', 'session', 'Sessions'), Binding('d', 'remove_slack', 'Unlink Slack', show=False),
                 Binding('o', 'open_pr', 'Open PR', show=False), Binding('x', 'close_pr', 'Close PR'),
                 Binding('m', 'merge_pr', 'Merge PR'), Binding('f3', 'statistics', 'Daily stats'),
+                Binding('f4', 'my_day', 'My Day'), Binding('a', 'add_to_day', 'Plan PR'),
                 Binding('p', 'copy_pr_link', 'Copy PR link'), Binding('f2', 'sort', 'Sort'),
                 Binding('c', 'clear_filters', 'Clear filters', show=False), Binding('escape', 'table', 'PR list', show=False)]
     CSS = """
@@ -236,13 +239,16 @@ class WorkTrackerApp(App):
     Screen.narrow #toolbar Button { min-width: 6; padding: 0 1; margin-right: 0; }
     """
 
-    def __init__(self, root, rpc=request, opener=None, poll_interval=3, clipboard_writer=None):
+    def __init__(self, root, rpc=request, opener=None, poll_interval=3, clipboard_writer=None, start_view='day'):
         super().__init__()
         self.root = Path(root).expanduser().resolve()
         self.rpc = rpc
         self.opener = opener or webbrowser.open
         self.poll_interval = poll_interval
         self.clipboard_writer = clipboard_writer
+        if start_view not in ('day','prs'):
+            raise ValueError('Choose the My Day or PR list start view')
+        self.start_view = start_view
         self.sort_field = DEFAULT_PR_SORT['field']
         self.sort_descending = DEFAULT_PR_SORT['descending']
         self._sort_preferences_loaded = False
@@ -309,6 +315,8 @@ class WorkTrackerApp(App):
         self.request_load()
         if self.poll_interval:
             self.set_interval(self.poll_interval, self.request_load)
+        if self.start_view == 'day':
+            self.call_after_refresh(self.action_my_day)
 
     def on_resize(self, event):
         self._layout(event.size.width)
@@ -624,7 +632,7 @@ class WorkTrackerApp(App):
             action()
 
     def check_action(self, action, parameters):
-        if len(self.screen_stack) > 1 and action in {'quit', 'search', 'refresh_prs', 'edit', 'register', 'slack', 'session', 'remove_slack', 'links', 'open_pr', 'clear_filters', 'table', 'close_pr', 'merge_pr', 'copy_pr_link', 'sort', 'statistics'}:
+        if len(self.screen_stack) > 1 and action in {'quit', 'search', 'refresh_prs', 'edit', 'register', 'slack', 'session', 'remove_slack', 'links', 'open_pr', 'clear_filters', 'table', 'close_pr', 'merge_pr', 'copy_pr_link', 'sort', 'statistics', 'my_day', 'add_to_day'}:
             return False
         return True
 
@@ -700,6 +708,19 @@ class WorkTrackerApp(App):
         url = (self.inventory or {}).get('github_url')
         if url:
             self.open_reference(url, 'inventory')
+
+    def action_my_day(self):
+        if len(self.screen_stack) == 1:
+            self.push_screen(MyDayScreen())
+
+    def action_add_to_day(self):
+        if self.connected and self.selected_record and len(self.screen_stack) == 1:
+            self.push_screen(DayItemForm(pr_url=self.selected_record['url']), self._day_pr_added)
+
+    def _day_pr_added(self, result):
+        if result:
+            self.notify(plain(result['message']), markup=False)
+        self._layout()
 
     def action_statistics(self):
         if self.connected and len(self.screen_stack) == 1:
@@ -790,5 +811,5 @@ class WorkTrackerApp(App):
             self._update_buttons()
 
 
-def run(root):
-    WorkTrackerApp(root).run()
+def run(root, start_view='day'):
+    WorkTrackerApp(root, start_view=start_view).run()

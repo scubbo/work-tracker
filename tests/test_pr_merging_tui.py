@@ -42,7 +42,7 @@ class MergeTUITests(unittest.IsolatedAsyncioTestCase):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.api = MergingAPI(self.temp.name)
-        self.app = WorkTrackerApp(Path('/tmp/not-a-merge-datastore'), rpc=self.api, poll_interval=0)
+        self.app = WorkTrackerApp(Path('/tmp/not-a-merge-datastore'), rpc=self.api, poll_interval=0, start_view='prs')
 
     async def open(self, pilot, choose=True):
         await settle(self.app, pilot)

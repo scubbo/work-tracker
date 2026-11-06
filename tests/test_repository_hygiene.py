@@ -46,6 +46,7 @@ class RepositoryHygieneTests(unittest.TestCase):
             'project-stats.tsv', 'stats.parquet', 'stats.arrow', 'stats.json',
             'statistics.json', 'daily-stats.json', 'stats-history.json', 'metrics.json',
             'custom-state/stats.json', 'custom-state/statistics.json',
+            'my-day.json', 'day-plan.json', 'day.json', 'custom-state/my-day.json',
         ]
         self.assertEqual(self.ignored(paths), set(paths))
 
