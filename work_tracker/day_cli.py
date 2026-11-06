@@ -19,6 +19,8 @@ def configure(commands):
     add = operations.add_parser('add', help='Quick-add a Task or link a known Task, workstream, or tracked PR')
     add.add_argument('text', nargs='?', help='Text for a new Task or an optional daily label for an existing target')
     add.add_argument('--awareness', action='store_true', help='Keep watching this item until it is explicitly dismissed')
+    add.add_argument('--in-project','--project',dest='task_project',help='Project for a new Task; blank uses Unclassified')
+    add.add_argument('--in-workstream',dest='task_workstream',help='Workstream for a new Task; requires --in-project')
     group = add.add_mutually_exclusive_group()
     group.add_argument('--task')
     group.add_argument('--workstream')
@@ -28,11 +30,15 @@ def configure(commands):
                               ('remove','Remove a goal from today without deleting its Task'),
                               ('dismiss','Dismiss a persistent awareness item'),
                               ('carry','Explicitly copy an unfinished past goal to today'),
-                              ('edit','Change the day label, not the underlying Task or workstream')):
+                              ('edit','Change the day label or explicitly assign the Task'),
+                              ('classify','Assign the underlying Task to a project/workstream')):
         operation = operations.add_parser(action, help=help_text)
         operation.add_argument('item_id')
         operation.add_argument('--version', type=int, help='Expected item version; otherwise use the currently displayed version')
-        if action=='edit': operation.add_argument('text')
+        if action=='edit': operation.add_argument('text',nargs='?')
+        if action in ('edit','classify'):
+            operation.add_argument('--in-project','--project',dest='task_project')
+            operation.add_argument('--in-workstream','--workstream',dest='task_workstream')
         mutations.append(operation)
     for operation in mutations:
         operation.add_argument('--key', help='Reuse this key with the identical payload after an uncertain response')
@@ -66,6 +72,11 @@ def run(root, args, rpc):
         if args.pr: payload['url'] = args.pr
         elif args.task or args.workstream: payload['target_id'] = args.task or args.workstream
         if args.text is not None: payload['text'] = args.text
+        if args.task_project is not None or args.task_workstream is not None:
+            if payload['target_kind']!='new':
+                raise ValueError('Existing links inherit classification. Use day classify after adding the Task.')
+            if args.task_project is not None: payload['project']=args.task_project
+            if args.task_workstream is not None: payload['workstream']=args.task_workstream
     else:
         item = next((item for item in [*view['goals'],*view['awareness'],*view['carry_candidates']] if item['id']==args.item_id),None)
         if args.version is None and item is None:
@@ -74,7 +85,20 @@ def run(root, args, rpc):
         if action in ('done','reopen'):
             payload['done'] = action=='done'
             action = 'set_done'
-        elif action=='edit': payload['text'] = args.text
+        elif action in ('edit','classify'):
+            if action=='edit' and args.text is not None: payload['text']=args.text
+            assigning=args.task_project is not None or args.task_workstream is not None
+            if action=='classify' and not assigning:
+                raise ValueError('Provide --project or --workstream for classification')
+            if assigning:
+                if item is None or item['target_kind']!='task':
+                    raise ValueError('Select a visible Task item before changing its classification')
+                target=item['target']
+                project=args.task_project if args.task_project is not None else target['project_name']
+                workstream=args.task_workstream if args.task_workstream is not None else (
+                    'Unclassified' if (project.strip() or 'Unclassified')!=target['project_name'] else target['workstream_name'])
+                payload.update(project=project,workstream=workstream,expected_workstream_id=target['workstream_id'])
+            action='edit'
     request = {'key':key,'action':action,'payload':payload,'source':{'client':'cli'}}
     print(f"My Day request key: {key}; day: {payload['day']}",file=sys.stderr)
     try:

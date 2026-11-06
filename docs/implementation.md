@@ -241,3 +241,15 @@ Tests cover the default home view, literal labels, target selection, daily versu
 unknown responses, unchanged request keys, midnight changes, version conflicts, migrations, and the real application socket.
 Synthetic planning tests use isolated temporary state. Verification does not seed the live user's day plan.
 The complete deterministic suite passed 257 tests with exit 0.
+
+## My Day Task classification
+
+The initial quick-add flow always used Unclassified, and Edit changed only the day label.
+Project/workstream assignment is now optional for new Tasks and explicit in Edit for existing Task targets.
+Known-name completion follows the PR metadata editor. Linking an existing target keeps its classification until a separate explicit edit.
+The CLI supports `day add --project NAME --in-workstream NAME` and `day classify ITEM_ID --project NAME --workstream NAME`.
+
+Task moves check both the day-item version and its observed workstream ID. Stale attempts cannot create stray hierarchy branches or overwrite another assignment.
+Local PR metadata and the current statistics snapshot stay consistent with the shared Task. Day labels, lifecycle state, and historical statistics grouping stay unchanged.
+Synthetic tests cover named creation, shared reassignment, conflicts, safe retries, CLI options, completion behavior, and socket boundaries.
+The complete deterministic suite passed 271 tests with exit 0.

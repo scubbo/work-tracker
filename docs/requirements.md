@@ -153,8 +153,10 @@ keeping an eye on. Awareness items do not imply active PR follow-up.
 Existing workstreams and tasks can be selected into the view.
 
 Quick text entry still creates a Task. Put it under the general Unclassified
-project and workstream, then link it into My Day. Do not introduce taskless
-standalone goals as a shortcut.
+project and workstream by default, then link it into My Day. Do not introduce taskless
+standalone goals as a shortcut. Jack later requested explicit project/workstream
+assignment on creation and reassignment of My Day Tasks. Treat classification as
+shared Task metadata, guard it against stale edits, and preserve historical stats grouping.
 
 Awareness items persist until dismissed. Goals are selected afresh each day.
 Offer yesterday's unfinished goals for explicit carry-forward rather than

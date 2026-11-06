@@ -173,6 +173,103 @@ class MyDayTests(unittest.TestCase):
         app=Application(self.temp.name,clock=lambda:self.now,run=self.run)
         self.assertEqual(app.dispatch('my_day',{})['goals'][0]['label'],'Retain this plan')
 
+    def test_new_tasks_accept_optional_project_and_workstream_for_goals_and_awareness(self):
+        for kind in ('goal','awareness'):
+            self.edit('add',{'kind':kind,'text':'Classified outcome','project':'Alpha','workstream':'Flow'})
+        for item in self.day()['goals']+self.day()['awareness']:
+            self.assertEqual((item['target']['project_name'],item['target']['workstream_name']),('Alpha','Flow'))
+            self.assertFalse(item['target']['closed'])
+        self.run.assert_not_called()
+
+    def test_task_reassignment_is_shared_without_renaming_or_completing_targets(self):
+        self.add('Stable Task')
+        item=self.day()['goals'][0]
+        self.edit('add',{'kind':'awareness','target_kind':'task','target_id':item['target_id']})
+        result=self.change('edit',item,project='Alpha',workstream='Flow',expected_workstream_id=item['target']['workstream_id'])
+        self.assertTrue(result['classification_changed'])
+        for value in self.day()['goals']+self.day()['awareness']:
+            self.assertEqual(value['target_id'],item['target_id'])
+            self.assertEqual((value['target']['project_name'],value['target']['workstream_name']),('Alpha','Flow'))
+            self.assertEqual(value['label'],'Stable Task')
+            self.assertEqual(value['target']['title'],'Stable Task')
+            self.assertFalse(value['target']['closed'])
+
+    def test_reassigning_a_pr_task_updates_local_metadata_and_current_stats_not_historical_stats(self):
+        self.app.dispatch('intent',{'key':'classify-pr','kind':'register_pr',
+            'payload':{'url':PR,'description':'Keep this explanation','project':'Alpha','workstream':'Flow'}})
+        self.edit('add',{'kind':'goal','target_kind':'pr','url':PR})
+        first=self.day()['goals'][0]
+        old_day=self.day()['today']
+        self.now+=timedelta(days=1)
+        self.change('carry',first)
+        item=self.day()['goals'][0]
+        self.change('edit',item,project='Beta',workstream='Review',expected_workstream_id=item['target']['workstream_id'])
+        current=self.app.dispatch('get_pr',{'url':PR})
+        self.assertEqual((current['project'],current['project_name'],current['workstream_name']),('Beta','Beta','Review'))
+        self.assertEqual(current['description'],'Keep this explanation')
+        self.assertEqual(current['github'],{})
+        old=self.app.dispatch('statistics',{'since':old_day,'until':old_day,'project':'Alpha'})['items'][0]
+        self.assertEqual(old['total_tracked'],1)
+        new=self.app.dispatch('statistics',{'days':1,'project':'Beta'})['items'][0]
+        self.assertEqual(new['total_tracked'],1)
+        self.assertEqual(self.app.storage.export_registry()[PR]['project'],'Beta')
+        self.run.assert_not_called()
+
+    def test_stale_task_classification_is_rejected_even_when_day_item_version_is_unchanged(self):
+        self.app.dispatch('intent',{'key':'stale-pr','kind':'register_pr','payload':{'url':PR,'project':'Alpha'}})
+        self.edit('add',{'kind':'goal','target_kind':'pr','url':PR})
+        item=self.day()['goals'][0]
+        self.app.dispatch('intent',{'key':'other-editor','kind':'update_pr','payload':{'url':PR,'project':'Beta'}})
+        with self.assertRaisesRegex(ValueError,'classification changed'):
+            self.change('edit',item,project='Do not create this project',workstream='Flow',expected_workstream_id=item['target']['workstream_id'])
+        self.assertEqual(self.day()['goals'][0]['version'],item['version'])
+        self.assertEqual(self.day()['goals'][0]['target']['project_name'],'Beta')
+        self.assertNotIn('Do not create this project',[value['name'] for value in self.app.dispatch('catalog',{})['projects']])
+
+    def test_classification_requires_explicit_target_precondition_and_never_reparents_a_workstream(self):
+        self.add()
+        item=self.day()['goals'][0]
+        with self.assertRaises(ValueError): self.change('edit',item,project='Alpha',workstream='Flow')
+        stream=item['target']['workstream_id']
+        self.edit('add',{'kind':'goal','target_kind':'workstream','target_id':stream})
+        workstream=next(value for value in self.day()['goals'] if value['target_kind']=='workstream')
+        with self.assertRaises(ValueError): self.change('edit',workstream,project='Alpha',workstream='Flow',expected_workstream_id=stream)
+        for target_kind,identifier in (('task',item['target_id']),('workstream',stream)):
+            with self.assertRaises(ValueError):
+                self.edit('add',{'kind':'goal','target_kind':target_kind,'target_id':identifier,'project':'Alpha'})
+
+    def test_invalid_classification_rolls_back_task_creation(self):
+        for fields in ({'workstream':'Flow'},{'project':'x'*201},{'project':'unsafe\nname'},{'project':False}):
+            with self.subTest(fields=fields),self.assertRaises(ValueError):
+                self.edit('add',{'kind':'goal','text':'No orphan',**fields})
+        with self.app.storage._connection(read=True) as db:
+            self.assertEqual(db.execute('SELECT count(*) FROM tasks').fetchone()[0],0)
+        self.assertEqual(self.day()['goals'],[])
+
+    def test_classification_retry_returns_receipt_instead_of_failing_the_old_precondition(self):
+        self.add()
+        item=self.day()['goals'][0]
+        payload={'item_id':item['id'],'expected_version':item['version'],'project':'Alpha','workstream':'Flow',
+                 'expected_workstream_id':item['target']['workstream_id']}
+        first=self.edit('edit',payload,key='classify-once')
+        again=self.edit('edit',payload,key='classify-once')
+        self.assertTrue(again['duplicate'])
+        self.assertEqual(first['item_id'],again['item_id'])
+        self.assertEqual(self.day()['goals'][0]['version'],item['version']+1)
+        with self.assertRaises(ValueError): self.edit('edit',{**payload,'project':'Beta'},key='classify-once')
+
+    def test_cli_can_create_and_reassign_classification_without_changing_the_label(self):
+        def rpc(root,method,params=None): return self.app.dispatch(method,params or {})
+        with mock.patch('work_tracker.cli.request',side_effect=rpc),mock.patch('sys.stdout',new_callable=io.StringIO),mock.patch('sys.stderr',new_callable=io.StringIO):
+            self.assertEqual(cli.main(['day','add','CLI classified','--project','Alpha','--in-workstream','Flow','--key','cli-create']),0)
+            item=self.day()['goals'][0]
+            self.assertEqual(item['target']['project_name'],'Alpha')
+            self.assertEqual(cli.main(['day','classify',item['id'],'--project','Beta','--workstream','Review','--key','cli-classify']),0)
+        current=self.day()['goals'][0]
+        self.assertEqual(current['label'],'CLI classified')
+        self.assertEqual((current['target']['project_name'],current['target']['workstream_name']),('Beta','Review'))
+        self.run.assert_not_called()
+
     def test_cli_add_done_history_and_targets_use_only_the_supported_api(self):
         def rpc(root,method,params=None): return self.app.dispatch(method,params or {})
         with mock.patch('work_tracker.cli.request',side_effect=rpc),mock.patch('sys.stdout',new_callable=io.StringIO) as output,mock.patch('sys.stderr',new_callable=io.StringIO):

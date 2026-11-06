@@ -32,6 +32,10 @@ class DayAPI(FakeAPI):
             'payload':{'day':self.day()['today'],'kind':kind,'text':label},'source':{'client':'fixture'}})
 
     def __call__(self,root,method,params=None):
+        if method=='catalog':
+            self.calls.append((method,deepcopy(params or {})))
+            if self.fail_catalog: raise RuntimeError('Known names unavailable')
+            return self.backend.dispatch(method,params or {})
         if method not in ('my_day','day_targets','day_intent'):
             return super().__call__(root,method,params)
         self.calls.append((method,deepcopy(params or {})))

@@ -73,7 +73,7 @@ class InterfaceTests(unittest.TestCase):
 
     def test_my_day_roundtrip_uses_the_application_socket_without_creating_a_pr(self):
         view=request(self.root,'my_day')
-        payload={'day':view['today'],'kind':'goal','text':'Socket day outcome'}
+        payload={'day':view['today'],'kind':'goal','text':'Socket day outcome','project':'Alpha','workstream':'Flow'}
         params={'key':'day-socket','action':'add','payload':payload,'source':{'client':'test'}}
         first=request(self.root,'day_intent',params)
         self.assertTrue(request(self.root,'day_intent',params)['duplicate'])
@@ -81,7 +81,15 @@ class InterfaceTests(unittest.TestCase):
         self.assertEqual(item['id'],first['item_id'])
         request(self.root,'day_intent',{'key':'done-socket','action':'set_done',
             'payload':{'day':view['today'],'item_id':item['id'],'expected_version':item['version'],'done':True},'source':{'client':'test'}})
-        self.assertTrue(request(self.root,'my_day')['goals'][0]['done'])
+        completed=request(self.root,'my_day')['goals'][0]
+        self.assertTrue(completed['done'])
+        request(self.root,'day_intent',{'key':'classify-socket','action':'edit','payload':{'day':view['today'],
+            'item_id':completed['id'],'expected_version':completed['version'],'project':'Beta','workstream':'Review',
+            'expected_workstream_id':completed['target']['workstream_id']},'source':{'client':'test'}})
+        classified=request(self.root,'my_day')['goals'][0]
+        self.assertEqual((classified['target']['project_name'],classified['target']['workstream_name']),('Beta','Review'))
+        self.assertTrue(classified['done'])
+        self.assertFalse(classified['target']['closed'])
         self.assertEqual(request(self.root,'status')['prs'],0)
         self.assertEqual(request(self.root,'day_targets',{'search':'Socket day outcome'})['total'],1)
         with self.assertRaises(ValueError): request(self.root,'day_intent',{**params,'shell':'anything'})

@@ -136,15 +136,47 @@ class MyDayStore:
                    (identifier,kind,day,target['kind'],target['id'],label or target['title'],position,stamp,stamp,carried_from))
         return identifier, 'Added to My Day.'
 
+    @staticmethod
+    def _classification(payload):
+        if 'workstream' in payload and 'project' not in payload:
+            raise ValueError('Provide the project when assigning a workstream')
+        values = []
+        for field in ('project','workstream'):
+            value = payload.get(field)
+            if value is not None and not isinstance(value,str):
+                raise ValueError('Project and workstream names must be text')
+            value = (value or '').strip() or UNCLASSIFIED
+            if len(value)>200 or any(not char.isprintable() for char in value):
+                raise ValueError('Project and workstream names must be at most 200 printable characters')
+            values.append(value)
+        return values
+
+    def _classify_task(self, db, row, payload):
+        if row['target_kind']!='task':
+            raise ValueError('A workstream item inherits its project. Only a Task can be reassigned here.')
+        target = self._target(db,'task',row['target_id'])
+        if payload.get('expected_workstream_id') != target['workstream_id']:
+            raise ValueError('Task classification changed. Reload before assigning its project or workstream.')
+        project, workstream = self._classification(payload)
+        workstream_id = self.storage._workstream(db,project,workstream)
+        if workstream_id == target['workstream_id']:
+            return False
+        db.execute('UPDATE tasks SET workstream_id=? WHERE id=?', (workstream_id,target['id']))
+        for linked in db.execute('SELECT url,metadata FROM prs WHERE task_id=?', (target['id'],)).fetchall():
+            metadata = json.loads(linked['metadata'])
+            metadata['project'] = project if project!=UNCLASSIFIED else None
+            db.execute('UPDATE prs SET metadata=? WHERE url=?', (encoded(metadata),linked['url']))
+        return True
+
     def apply(self, params, now):
         if set(params) != {'key','action','payload','source'}:
             raise ValueError('My Day edits require a key, action, payload, and source')
         key, action, payload, source = (params[name] for name in ('key','action','payload','source'))
         if not isinstance(key,str) or not key or len(key)>200 or not isinstance(payload,dict) or not isinstance(source,dict):
             raise ValueError('Invalid My Day request key, payload, or source')
-        allowed = {'add':{'day','kind','text','target_kind','target_id','url'},
+        allowed = {'add':{'day','kind','text','target_kind','target_id','url','project','workstream'},
                    'set_done':{'day','item_id','expected_version','done'},
-                   'edit':{'day','item_id','expected_version','text'},
+                   'edit':{'day','item_id','expected_version','text','project','workstream','expected_workstream_id'},
                    'remove':{'day','item_id','expected_version'},
                    'dismiss':{'day','item_id','expected_version'},
                    'carry':{'day','item_id','expected_version'}}
@@ -159,6 +191,7 @@ class MyDayStore:
                 return {**json.loads(old['receipt']), 'duplicate': True}
             if payload.get('day') != current:
                 raise ValueError('The calendar day changed or is read-only. Reload My Day before editing.')
+            classification_changed = False
             if action == 'add':
                 kind, target_kind = payload.get('kind'), payload.get('target_kind','new')
                 if kind not in ('goal','awareness'):
@@ -168,10 +201,14 @@ class MyDayStore:
                     if label is None or set(payload) & {'target_id','url'}:
                         raise ValueError('A quick-add item needs text, not an existing target')
                     target_id = uuid.uuid4().hex
-                    workstream = self.storage._workstream(db,UNCLASSIFIED,UNCLASSIFIED)
+                    project, workstream_name = self._classification(payload)
+                    workstream = self.storage._workstream(db,project,workstream_name)
                     db.execute('INSERT INTO tasks(id,workstream_id,title) VALUES(?,?,?)', (target_id,workstream,label))
+                    classification_changed = bool(set(payload) & {'project','workstream'})
                     target_kind = 'task'
                 else:
+                    if set(payload) & {'project','workstream'}:
+                        raise ValueError('Existing targets keep their classification when linked. Use Edit after adding the Task.')
                     if target_kind=='pr':
                         if not isinstance(payload.get('url'),str) or 'target_id' in payload:
                             raise ValueError('Select one tracked PR URL')
@@ -203,9 +240,15 @@ class MyDayStore:
                                    (int(payload['done']),stamp,identifier))
                         message = 'Daily goal updated. Its Task and PRs were not changed.'
                     elif action=='edit':
-                        label = text(payload.get('text'))
+                        assigning = bool(set(payload) & {'project','workstream'})
+                        if not assigning and ('text' not in payload or 'expected_workstream_id' in payload):
+                            raise ValueError('Provide a day label or explicit Task classification changes')
+                        label = text(payload['text']) if 'text' in payload else row['label']
+                        if assigning:
+                            classification_changed = self._classify_task(db,row,payload)
                         db.execute('UPDATE my_day_items SET label=?,version=version+1,updated_at=? WHERE id=?', (label,stamp,identifier))
-                        message = 'Day label updated. The underlying Task or workstream was not renamed.'
+                        message = ('Task project/workstream updated for every linked day item and PR. No GitHub state changed.' if classification_changed else
+                                   'Day label updated. The underlying Task or workstream was not renamed.')
                     elif action=='remove':
                         if row['kind']!='goal':
                             raise ValueError('Use dismiss for a persistent awareness item')
@@ -216,6 +259,7 @@ class MyDayStore:
                             raise ValueError('Only awareness items can be dismissed')
                         db.execute('UPDATE my_day_items SET dismissed_day=?,version=version+1,updated_at=? WHERE id=?', (current,stamp,identifier))
                         message = 'Awareness item dismissed. The underlying Task was not changed.'
-            receipt = {'key':key,'item_id':identifier,'day':current,'duplicate':False,'message':message}
+            receipt = {'key':key,'item_id':identifier,'day':current,'duplicate':False,'message':message,
+                       'classification_changed':classification_changed}
             db.execute('INSERT INTO my_day_intents VALUES(?,?,?,?,?,?)', (key,action,encoded(payload),encoded(source),encoded(receipt),stamp))
         return receipt

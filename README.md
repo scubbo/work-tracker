@@ -177,8 +177,12 @@ Use `work-tracker tui --view prs` to start directly with PRs. From that list, `a
 
 My Day separates daily goals, persistent awareness, and unfinished carry-forward candidates.
 Add a goal with `a`, add awareness with `w`, and use Space to switch a goal between Open and Done.
-Quick text creates a Task in the general Unclassified project/workstream. Existing Tasks and workstreams are searchable targets.
+Quick text creates a Task with optional Project and Workstream fields. Blank names default to Unclassified.
+The fields suggest known names, accept Right Arrow completion, and allow new names. Existing Tasks and workstreams are searchable targets.
 A day label can describe a specific outcome without renaming its underlying Task or workstream.
+In Edit, a Task's Project and Workstream can also be reassigned. Classification belongs to the Task, not only that day entry.
+Every linked day item and PR sees the new local classification. Task completion, GitHub state, and past statistics grouping stay unchanged.
+Linking an existing target inherits its classification. Workstream goals inherit their project and cannot reparent the whole workstream through this form.
 Completion affects only that day's item. It never closes a Task, workstream, or PR.
 
 Awareness persists until explicitly dismissed. In the Carry forward tab, choose an unfinished prior goal and press `c`.
@@ -189,15 +193,17 @@ Midnight invalidates unsent old-day edits rather than assigning them silently to
 
 ```sh
 ~/.local/bin/work-tracker day
-~/.local/bin/work-tracker day add 'Finish the review' --key plan-review
+~/.local/bin/work-tracker day add 'Finish the review' --project Alpha --in-workstream Review --key plan-review
 ~/.local/bin/work-tracker day add 'Watch the rollout' --awareness --key watch-rollout
 ~/.local/bin/work-tracker day targets --search 'review'
 ~/.local/bin/work-tracker day add --pr https://github.com/owner/repo/pull/123 --key plan-pr
+~/.local/bin/work-tracker day classify ITEM_ID --project Alpha --workstream Review --key assign-task
 ~/.local/bin/work-tracker day done ITEM_ID --key complete-goal
 ~/.local/bin/work-tracker day --date 2026-11-05 --json
 ```
 
-CLI output includes item IDs and versions. Use `reopen`, `edit`, `remove`, `dismiss`, or `carry` for explicit local changes.
+CLI output includes item IDs and versions. Use `reopen`, `edit`, `classify`, `remove`, `dismiss`, or `carry` for explicit local changes.
+On `add`, `--workstream ID` still links an existing workstream goal. Use `--in-workstream NAME` to classify a new Task instead.
 Reuse the same key and payload after an uncertain response. Stale versions fail instead of overwriting another client's edits.
 My Day is available through the TUI and CLI only. No My Day MCP tool is exposed, and planning never writes to GitHub.
 Day plans stay in private application storage, not in Git or a separate TUI database.

@@ -17,8 +17,11 @@ that first slice. Read `docs/application.md` for the actual runtime boundary.
 Jack then approved Textual and asked to start TUI implementation.
 The first Open PR TUI is implemented in `work_tracker/tui.py` and `tui_forms.py`.
 My Day is the TUI home view, with Open/Done goals, persistent awareness, and
-explicit carry-forward. Quick-add creates an Unclassified Task. Completing a day
-item must not close its Task, workstream, or PR. Past goal history is read-only.
+explicit carry-forward. Quick-add defaults to Unclassified but accepts explicit
+project/workstream assignment. My Day Edit can reassign a Task globally, with
+item-version and expected-workstream preconditions. Keep linked PR metadata and
+current stats consistent without changing GitHub or past snapshot grouping.
+Completing a day item must not close its Task, workstream, or PR. Past goal history is read-only.
 My Day is available through the TUI and CLI only, not MCP. Keep the PR list
 available through F4 and allow its selected PR Task to be added with `a`.
 Standalone project/workstream management views remain follow-ups.

@@ -107,10 +107,16 @@ The private `my_day` read accepts an optional local calendar date. `day_targets`
 `day_intent` accepts explicitly validated local planning actions with a stable key, complete payload, and source metadata.
 These operations are not MCP tools. The CLI and TUI call the application rather than opening SQLite.
 
-Quick-add creates a Task and its day item in one transaction under the general Unclassified project/workstream.
+Quick-add creates a Task and its day item in one transaction. Optional project/workstream names use the existing hierarchy.
+Omitted or blank names default to Unclassified. New names are explicit, validated, and created atomically with the Task.
 A tracked PR resolves to its stable Task, not a duplicate Task. Workstreams can also be linked directly.
 A target has at most one daily goal for a day and one active awareness item. Repeated additions reuse the link.
 Daily labels are separate from target titles. Open/Done, editing, removal, and dismissal never mutate target lifecycle or GitHub state.
+An explicit Task assignment in `edit` requires both the day-item version and the observed `expected_workstream_id`.
+The same transaction moves the Task and updates all linked local PR project metadata. It does not rename the Task or reparent a workstream.
+Classification receipts trigger compatibility mirroring and a current-day statistics capture. Past statistics membership and grouping stay fixed.
+Adding an existing target never silently reassigns it. The TUI and CLI use Edit/classify for that separate explicit change.
+This uses existing hierarchy columns and does not require another schema migration.
 
 Goals belong to one local calendar day. Past goal history is read-only. Awareness stays active until its explicit dismissal day.
 Carry-forward creates a new item for today with a source link. It preserves the earlier row and never closes the underlying Task.

@@ -27,9 +27,13 @@ The home view has Goals, Awareness, and Carry forward tabs. The day comes from t
 F4 or PRs switches to the PR list. F3 opens daily statistics. Escape returns to PRs, and `q` quits only the TUI.
 Use Previous and Next for read-only history. Today follows the current local date, including after midnight.
 
-Press `a` to add a goal or `w` to add persistent awareness. Quick text creates an Unclassified Task.
+Press `a` to add a goal or `w` to add persistent awareness. Quick text creates a Task.
+Optional Project and Workstream fields use Unclassified when blank. Right Arrow accepts known-name completion, and new names are allowed.
 Choose Existing Task or Existing workstream to search known targets. An optional label describes the daily outcome without renaming its target.
-Space changes only a daily goal's Open/Done state. `e` edits its label, and Delete removes it from today's plan without deleting the Task.
+Space changes only a daily goal's Open/Done state. `e` edits its label and, for a Task, its project/workstream assignment.
+Classification applies to the underlying Task wherever it is linked, including local PR metadata. Task titles, completion state, and GitHub stay unchanged.
+Linked existing targets inherit classification on add. Workstream items cannot move an entire workstream between projects through this form.
+Delete removes a goal from today's plan without deleting the Task.
 For awareness, Delete dismisses the persistent watch item. It stays visible on later days until dismissed.
 
 Carry forward never runs automatically. Select a candidate in that tab and press `c` to create today's linked item.
@@ -39,7 +43,8 @@ The picker shows up to the first 50 cached PR links for a target. Workstream cla
 
 From the PR list, `a` opens an add-goal form for the selected PR's existing Task.
 Forms retain one key and frozen payload after a lost response. Retry repeats that request, not a new Task creation.
-Item edits carry version preconditions. A conflicting edit reloads rather than overwriting another client.
+Item edits carry version preconditions. Task assignment also checks its previously observed workstream ID.
+A conflicting edit fails instead of overwriting another client. Reopen the form to review the current assignment.
 If the calendar day changes, reopen an unsent old-day form. History is not silently rewritten.
 No planning action changes GitHub or closes the linked Task/workstream. My Day has no MCP tools in this version.
 

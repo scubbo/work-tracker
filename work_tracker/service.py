@@ -168,7 +168,11 @@ class Application:
             return self.storage.day_targets(params)
         if method == 'day_intent':
             with self.mutation_lock:
-                return self.storage.apply_day_intent(params, self.clock())
+                result = self.storage.apply_day_intent(params, self.clock())
+                if result.get('classification_changed'):
+                    self.mirror()
+                    self._update_statistics()
+                return result
         if method == 'statistics':
             return self.storage.statistics(params, self.clock())
         if method == 'capture_statistics':
