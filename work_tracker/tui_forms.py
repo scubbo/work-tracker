@@ -68,7 +68,7 @@ class IntentForm(ModalScreen[dict | None]):
         self.workstream_choices = [self.record['workstream_name']] if self.record.get('workstream_name') else []
         self.titles = {"register": "Track an existing PR", "edit": "Edit local metadata",
                        "slack": "Attach a Slack thread", "session": "Attach an agent session",
-                       "remove_slack": "Remove a local Slack link"}
+                       "remove_slack": "Remove Slack thread"}
 
     def compose(self) -> ComposeResult:
         with Vertical(id="intent-dialog"):
@@ -96,9 +96,9 @@ class IntentForm(ModalScreen[dict | None]):
                     yield Label("Local description / why this matters")
                     yield TextArea(self.record.get("description") or "", id="form-description")
                 elif self.mode == "slack":
-                    yield Label("Slack thread permalink")
+                    yield Label("Slack thread")
                     yield Input(placeholder="https://workspace.slack.com/archives/C123/p123", id="form-thread")
-                    yield Label("Optional description")
+                    yield Label("Optional description (review, discussion, or ping context)")
                     yield Input(id="form-thread-description")
                 elif self.mode == "session":
                     for name, label, placeholder in (

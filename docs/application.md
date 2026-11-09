@@ -71,6 +71,19 @@ Failed saves keep the local order, warn, and retry after a successful connection
 Existing TUI windows retain their current sort. A fresh window reads the most recently saved choice.
 Filters are not persisted by this feature.
 
+## Slack thread references
+
+`Slack thread` is the canonical user-facing label for review, discussion, and ping context on a tracked PR.
+The existing `slack-threads` collection stores permalink URLs with optional descriptions. SQLite's local links table owns persistence.
+The `attach_slack` intent, legacy CLI thread command, and MCP `attach_slack_thread` keep their existing contracts.
+No additional metadata field, schema migration, or Slack credential is required.
+
+The PR-list Slack thread button and `l` binding open the sole reference directly.
+Several references use an immutable-PR chooser. It does not infer a preferred thread from order or description.
+The UI validates the selected HTTPS Slack permalink and rejects control characters before passing it to its existing opener.
+A failed opener result is reported, not treated as success. No shell command, invented Slack URI, message read, or Slack write is used.
+The browser/opener configuration determines web versus desktop routing. Cached references can be opened without the local application connection.
+
 ## Session action projection
 
 Session references retain the four-field identity contract. `source-session` remains legacy OpenCode provenance.

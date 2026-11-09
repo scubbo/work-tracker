@@ -98,8 +98,9 @@ A failed connection is not shown as zero PRs. Editing is disabled until reconnec
 | `n` or Track PR | Explicitly ingest an existing GitHub PR URL |
 | Links | Choose a local reference action with the mouse or keyboard |
 | `t` | Attach a Slack thread |
+| `l` or Slack thread | Open the selected PR's Slack thread, or choose when several are attached |
 | `s` | View saved sessions and resume actions, with an explicit Add session reference button |
-| `d` | Remove a selected local Slack link through a dialog |
+| `d` | Remove a selected Slack thread reference through a dialog |
 | `o` | Open the selected PR in the browser |
 | `p` | Copy the selected PR URL |
 | F2 | Choose the sort column and direction |
@@ -154,6 +155,23 @@ An asterisk marks today's provisional rows. Inventory and project assignment for
 Late closure observations can correct older closure metrics within their recorded membership.
 The history notice identifies missing calendar days. Missing snapshots are not zero activity or an invented backfill.
 If the application is offline, previously displayed rows stay visible. The TUI does not create its own statistics datastore.
+
+## Slack thread
+
+Slack thread is the canonical name for a tracked PR's review, discussion, or ping reference.
+Press `t` or choose Links > Add Slack thread to save a permalink and optional description.
+The existing `slack-threads` metadata collection supports several references and stays compatible with CLI and MCP attachment.
+
+From the PR list, press `l` or click Slack thread. A single saved reference opens directly.
+For several references, choose one and click Open Slack thread or press Ctrl+Enter. Escape cancels without opening anything.
+The chooser keeps the original PR and references even if the main list changes. No arbitrary primary thread is inferred.
+With no reference, the button is disabled and the shortcut explains how to add one.
+
+Full PR details also support `l` and their existing per-thread buttons. Cached links work while the tracker connection is offline.
+Typing `l` in an input, or using it from My Day or unrelated dialogs, does not open a hidden PR's thread.
+Only validated HTTPS Slack permalinks reach the opener. A rejected system link-handler result produces a warning instead of success.
+The action uses the existing browser/opener configuration. Slack desktop versus web routing follows your Slack/browser settings.
+Opening a link does not fetch messages, post a ping, or require Slack API credentials.
 
 ## Session references and resume commands
 

@@ -94,6 +94,10 @@ Project and workstream buttons scope the PR list to related records.
 
 Use Edit for local description and classification, Track PR for explicit
 ingestion, and Links for Slack or multi-tool agent-session references.
+The canonical name is `Slack thread` for review, discussion, or ping context. Existing metadata remains the `slack-threads` collection.
+Press `t` to attach a thread permalink with an optional description. Press `l` or click Slack thread to open it.
+One attached thread opens directly. Multiple threads open a chooser, without guessing a primary or overwriting existing links.
+The action uses the existing browser/opener configuration. Slack desktop versus web routing follows your Slack/browser settings.
 Project and workstream inputs suggest stored names. Type a prefix and press
 Right Arrow to complete it. Workstreams follow the entered project.
 New names remain allowed.

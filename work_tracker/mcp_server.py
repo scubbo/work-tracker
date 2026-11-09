@@ -54,7 +54,7 @@ def build_server(root):
 
     @server.tool(annotations=INTENT, structured_output=True)
     def attach_slack_thread(url: str, intent_key: str, thread: str, description: str | None = None) -> dict[str, Any]:
-        """Attach a Slack permalink locally. Does not read or post messages."""
+        """Attach a Slack thread permalink and optional context locally. Does not read or post messages."""
         payload = {"url": url, "thread": thread}
         if description is not None:
             payload["description"] = description

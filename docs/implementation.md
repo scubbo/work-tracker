@@ -253,3 +253,13 @@ Task moves check both the day-item version and its observed workstream ID. Stale
 Local PR metadata and the current statistics snapshot stay consistent with the shared Task. Day labels, lifecycle state, and historical statistics grouping stay unchanged.
 Synthetic tests cover named creation, shared reassignment, conflicts, safe retries, CLI options, completion behavior, and socket boundaries.
 The complete deterministic suite passed 271 tests with exit 0.
+
+## Slack thread shortcut
+
+The existing `slack-threads` collection already stores PR review/discussion/ping permalinks with optional descriptions.
+Slack thread is the canonical UI label. The PR-list button and `l` shortcut open one reference directly or offer an explicit chooser for several.
+The chooser retains its original PR, and unrelated screens cannot open the main view's hidden selection.
+Cached references remain usable offline. URL validation and opener failure checks run before any success is reported.
+No new metadata field or schema migration is needed. The action does not read or post Slack messages or invent an app URI.
+The full deterministic suite passed 280 tests with exit 0, including nine added metadata and shortcut regressions.
+Installed button and key checks passed with a captured opener. Live metadata, links, plan, schedule, sorting, and backend PID stayed unchanged.

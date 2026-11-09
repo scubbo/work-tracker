@@ -172,6 +172,10 @@ Keep the PR list available as a separate view, and provide a shortcut to add its
 Initially attach Slack threads and agent-session references to PRs.
 Keep the design extendable to tasks and possibly other hierarchy levels.
 Slack thread links can have optional descriptions.
+The canonical label is `Slack thread` for the requested review, discussion, or ping references.
+Reuse the existing `slack-threads` collection rather than creating competing fields.
+The PR list needs a one-button open action and a single-key shortcut. One thread opens directly, and several require explicit choice.
+Open validated saved permalinks only. Do not read or post Slack messages as part of this action.
 
 Support references to different agent tools, including OpenCode, fx, and Claude.
 A session reference contains the tool name, `path`, and `sessionId`.

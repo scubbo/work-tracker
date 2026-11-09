@@ -38,6 +38,12 @@ Keep GitHub merges behind explicit confirmation and the application-owned ledger
 Do not perform a live merge as a verification step without a specific PR request.
 MCP remains intent-only. Do not enable auto-merge or bypass required merge queues.
 
+Slack thread is the canonical label for PR review/discussion/ping references.
+Reuse the existing slack-threads collection. The PR-list Slack thread button and
+`l` shortcut open one saved permalink or ask which one when several exist.
+Opening a reference must not fetch or post Slack messages, invent an app URI,
+or act on a hidden PR selection from another screen.
+
 The TUI must stay a client: use the private application API, never SQLite or
 external service commands. Its periodic timer only reloads local views.
 Metadata editors must send changed fields only and use atomic edit preconditions

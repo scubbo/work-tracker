@@ -29,6 +29,7 @@ from .state_age import state_age
 from .clipboard import copy_macos
 from .tui_sort import COLUMN_LABELS, SORT_FIELDS, SortScreen, ordered_rows
 from .tui_sessions import SessionLinks, SessionsScreen
+from .tui_slack import SlackThreadScreen, slack_threads
 from .preferences import DEFAULT_PR_SORT, validate_pr_sort
 
 
@@ -104,7 +105,7 @@ def detail_text(record):
 
 
 class DetailScreen(ModalScreen[dict | None]):
-    BINDINGS = [Binding('escape', 'close', 'Back')]
+    BINDINGS = [Binding('escape', 'close', 'Back'), Binding('l', 'open_slack_thread', 'Slack thread')]
     CSS = """
     DetailScreen { align: center middle; background: $background 75%; }
     DetailScreen > #full-detail { width: 100; max-width: 96%; height: 92%; border: round $accent;
@@ -153,6 +154,9 @@ class DetailScreen(ModalScreen[dict | None]):
     def action_close(self):
         self.dismiss(None)
 
+    def action_open_slack_thread(self):
+        self.app.open_slack_threads(self.record)
+
     @on(Button.Pressed)
     def button_pressed(self, event):
         event.stop()
@@ -192,7 +196,7 @@ class LinksScreen(ModalScreen[dict | None]):
             yield Static(self.record['url'], markup=False)
             yield Button('Add Slack thread', id='links-slack')
             yield Button('Add agent session reference', id='links-session')
-            yield Button('Remove Slack link', id='links-remove', disabled=not self.record.get('slack-threads'))
+            yield Button('Remove Slack thread', id='links-remove', disabled=not self.record.get('slack-threads'))
             yield Button('Back', id='links-back')
 
     def action_close(self):
@@ -210,9 +214,10 @@ class WorkTrackerApp(App):
     SUB_TITLE = 'Open PRs · local application'
     BINDINGS = [Binding('q', 'quit', 'Quit'), Binding('/', 'search', 'Search'),
                 Binding('r', 'refresh_prs', 'Refresh GitHub'), Binding('e', 'edit', 'Edit'),
-                Binding('n', 'register', 'Track PR'), Binding('t', 'slack', 'Slack link', show=False),
-                Binding('s', 'session', 'Sessions'), Binding('d', 'remove_slack', 'Unlink Slack', show=False),
+                Binding('n', 'register', 'Track PR'), Binding('t', 'slack', 'Add Slack thread', show=False),
+                Binding('s', 'session', 'Sessions'), Binding('d', 'remove_slack', 'Remove Slack thread', show=False),
                 Binding('o', 'open_pr', 'Open PR', show=False), Binding('x', 'close_pr', 'Close PR'),
+                Binding('l', 'open_slack_thread', 'Slack thread'),
                 Binding('m', 'merge_pr', 'Merge PR'), Binding('f3', 'statistics', 'Daily stats'),
                 Binding('f4', 'my_day', 'My Day'), Binding('a', 'add_to_day', 'Plan PR'),
                 Binding('p', 'copy_pr_link', 'Copy PR link'), Binding('f2', 'sort', 'Sort'),
@@ -282,6 +287,7 @@ class WorkTrackerApp(App):
             yield Button('Edit', id='edit-pr')
             yield Button('Close PR', id='close-pr', variant='warning')
             yield Button('Details', id='details-pr')
+            yield Button('Slack thread', id='open-slack-thread', disabled=True)
             yield Button('Links', id='manage-links')
             yield Button('Clear filters', id='clear-filters')
             yield Button('Inventory', id='open-inventory')
@@ -326,11 +332,14 @@ class WorkTrackerApp(App):
         for screen in self.screen_stack:
             screen.set_class(width < 120, 'narrow')
         if self._main:
-            for name, compact, full in (('refresh-prs', 'Refresh', 'Refresh GitHub'),
+            for name, compact, full in (('refresh-prs', 'Sync', 'Refresh GitHub'),
                                         ('clear-filters', 'Clear', 'Clear filters'),
                                         ('track-pr', 'Track', 'Track PR'), ('close-pr', 'Close', 'Close PR'),
-                                        ('open-inventory', 'Totals', 'Inventory')):
-                self._main.query_one('#'+name, Button).label = compact if width < 120 else full
+                                        ('details-pr', 'Info', 'Details'), ('open-inventory', 'Count', 'Inventory'),
+                                        ('open-slack-thread', 'Slack', 'Slack thread')):
+                button = self._main.query_one('#'+name, Button)
+                button.label = compact if width < 120 else full
+                button.tooltip = full
             self.call_after_refresh(self._resize_columns)
 
     def _resize_columns(self):
@@ -524,6 +533,7 @@ class WorkTrackerApp(App):
         self._main.query_one('#track-pr', Button).disabled = not self.connected
         self._main.query_one('#edit-pr', Button).disabled = not self.connected or self.selected_record is None
         self._main.query_one('#details-pr', Button).disabled = self.selected_record is None
+        self._main.query_one('#open-slack-thread', Button).disabled = not slack_threads(self.selected_record)
         self._main.query_one('#close-pr', Button).disabled = not self.connected or self.selected_record is None
         self._main.query_one('#manage-links', Button).disabled = not self.connected or self.selected_record is None
         self._main.query_one('#refresh-prs', Button).disabled = self._refresh_requesting
@@ -625,6 +635,7 @@ class WorkTrackerApp(App):
         actions = {'track-pr': self.action_register, 'refresh-prs': self.action_refresh_prs,
                    'edit-pr': self.action_edit, 'close-pr': self.action_close_pr,
                    'details-pr': self.action_details, 'manage-links': self.action_links,
+                   'open-slack-thread': self.action_open_slack_thread,
                    'clear-filters': self.action_clear_filters, 'open-inventory': self.action_inventory}
         action = actions.get(event.button.id)
         if action:
@@ -632,7 +643,7 @@ class WorkTrackerApp(App):
             action()
 
     def check_action(self, action, parameters):
-        if len(self.screen_stack) > 1 and action in {'quit', 'search', 'refresh_prs', 'edit', 'register', 'slack', 'session', 'remove_slack', 'links', 'open_pr', 'clear_filters', 'table', 'close_pr', 'merge_pr', 'copy_pr_link', 'sort', 'statistics', 'my_day', 'add_to_day'}:
+        if len(self.screen_stack) > 1 and action in {'quit', 'search', 'refresh_prs', 'edit', 'register', 'slack', 'session', 'remove_slack', 'links', 'open_pr', 'open_slack_thread', 'clear_filters', 'table', 'close_pr', 'merge_pr', 'copy_pr_link', 'sort', 'statistics', 'my_day', 'add_to_day'}:
             return False
         return True
 
@@ -666,6 +677,8 @@ class WorkTrackerApp(App):
 
     def open_reference(self, url, kind):
         try:
+            if not isinstance(url,str) or any(not char.isprintable() for char in url):
+                raise ValueError('Link contains invalid control characters.')
             if kind == 'pr':
                 activity.pr_url(url)
             elif kind == 'slack':
@@ -674,9 +687,25 @@ class WorkTrackerApp(App):
                 parts = urlsplit(url)
                 if parts.scheme != 'https' or parts.netloc != 'github.com' or parts.path != '/pulls':
                     raise ValueError('The inventory link is not a GitHub PR search URL.')
-            self.opener(url)
+            if self.opener(url) is False:
+                raise ValueError('The system link handler did not accept the link.')
+            return True
         except Exception as exc:
             self.notify(f'Could not open link: {plain(exc)}', severity='error', markup=False)
+            return False
+
+    def open_slack_threads(self, record):
+        threads = slack_threads(record)
+        if not threads:
+            self.notify('No Slack thread is attached. Press t in the PR list to add one.',severity='warning',markup=False)
+        elif len(threads)==1:
+            self.open_reference(threads[0]['url'],'slack')
+        else:
+            self.push_screen(SlackThreadScreen(record))
+
+    def action_open_slack_thread(self):
+        if self.selected_record and len(self.screen_stack)==1:
+            self.open_slack_threads(self.selected_record)
 
     def action_open_pr(self):
         if self.selected_record:
@@ -778,7 +807,7 @@ class WorkTrackerApp(App):
 
     def action_remove_slack(self):
         if not self.selected_record or not self.selected_record.get('slack-threads'):
-            self.notify('No Slack links are attached to the selected PR.', markup=False)
+            self.notify('No Slack thread is attached to the selected PR.', markup=False)
             return
         self.open_form('remove_slack')
 
