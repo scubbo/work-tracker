@@ -10,6 +10,7 @@ from .client import default_state, request, wait_for_job
 from .state_age import state_age
 from .daily_stats import duration_text
 from .day_cli import configure as configure_day, run as run_day
+from .followup_cli import configure as configure_followup, run as run_followup
 
 
 def terminal_text(value):
@@ -30,6 +31,7 @@ def main(argv=None):
     commands.add_parser("inventory", help="Read account-wide counts without enrolling untracked PRs")
     commands.add_parser("stop")
     configure_day(commands)
+    configure_followup(commands)
     stats = commands.add_parser('stats', help='Read daily overall or per-project PR history')
     stats.add_argument('--since')
     stats.add_argument('--until')
@@ -98,6 +100,9 @@ def main(argv=None):
             return 0
         if args.command in ("status", "jobs", "inventory", "stop"):
             result = request(root, args.command)
+        elif args.command == 'follow-up':
+            result = run_followup(root,args,request)
+            if result is None:return 0
         elif args.command == 'day':
             result = run_day(root,args,request)
             if result is None:

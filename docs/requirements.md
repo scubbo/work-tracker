@@ -239,6 +239,19 @@ must preserve curated metadata, links, checkpoints, and archive references.
 The existing free-text project labels need an explicit mapping to the new tree.
 Do not guess project or workstream meaning from a repository name.
 
+## Follow-up advice and prioritization
+
+Jack requested two modes: one useful next action, and a list of work that appears neglected.
+He then asked to ship a basic version before choosing whether quick wins, unblocking, or stated priorities take precedence.
+He permits competing candidates and a suggested clarification conversation. Do not invent a personal priority policy.
+Stored tracker data, current GitHub reviews/comments, and explicitly linked Slack threads are permitted inputs to AI Gateway.
+Use them only as needed. Start with compact facts and disclose further context progressively rather than dumping all histories.
+Support explicit next actions, follow-on work, dependencies, waiting-on context, and revisit dates as useful local Task metadata.
+The first version advises only. Cloud analysis is explicit, frugal, bounded, and owned by the application.
+Add secure Gateway key configuration before live inference. No credential or collected planning/context data belongs in Git.
+Interactive conversation and feedback-driven or ambient improvement of a personal `SOUL.md` remain later phases.
+No automatic external action or rule rewriting is approved by this first advice slice.
+
 ## Follow-ups
 
 - Cross-cutting tags.

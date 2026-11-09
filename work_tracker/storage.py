@@ -36,6 +36,11 @@ class Storage(Protocol):
     def apply_day_intent(self, params: dict, now: datetime) -> dict: ...
     def capture_statistics(self, now: datetime) -> dict: ...
     def statistics(self, params: dict, now: datetime) -> dict: ...
+    def followup_snapshot(self,now: datetime) -> dict: ...
+    def followup_guidance(self,params: dict,now: datetime) -> dict: ...
+    def followup_runs(self,params: dict): ...
+    def save_followup_run(self,key,status,result,now,create=False): ...
+    def recover_followup(self,now): ...
     def get_pr_sort(self) -> dict: ...
     def set_pr_sort(self, value: dict) -> dict: ...
     def observe(self, url: str, github: dict, review_state: str, reason: str, expected_version=None) -> bool: ...
@@ -62,7 +67,7 @@ class SQLiteStorage:
         self.path.parent.chmod(0o700)
         with self._connection() as db:
             version = db.execute("PRAGMA user_version").fetchone()[0]
-            if version not in (0, 1, 2, 3, 4, 5, 6, 7):
+            if version not in (0, 1, 2, 3, 4, 5, 6, 7, 8):
                 raise ValueError(f"Unsupported database schema {version}; refusing to change it")
             db.execute("PRAGMA journal_mode=WAL")
             db.executescript("""
@@ -121,6 +126,12 @@ class SQLiteStorage:
                     ON my_day_items(day,target_kind,target_id) WHERE kind='goal';
                 CREATE UNIQUE INDEX IF NOT EXISTS my_day_active_awareness
                     ON my_day_items(target_kind,target_id) WHERE kind='awareness' AND dismissed_day IS NULL AND removed=0;
+                CREATE TABLE IF NOT EXISTS task_followup(
+                    task_id TEXT PRIMARY KEY REFERENCES tasks(id), version INTEGER NOT NULL,
+                    metadata TEXT NOT NULL, updated_at TEXT NOT NULL);
+                CREATE TABLE IF NOT EXISTS followup_runs(
+                    key TEXT PRIMARY KEY, status TEXT NOT NULL, created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL, result TEXT NOT NULL);
                 CREATE TABLE IF NOT EXISTS my_day_intents(
                     key TEXT PRIMARY KEY, action TEXT NOT NULL, payload TEXT NOT NULL,
                     source TEXT NOT NULL, receipt TEXT NOT NULL, created_at TEXT NOT NULL);
@@ -133,7 +144,7 @@ class SQLiteStorage:
             day_columns = {row[1] for row in db.execute('PRAGMA table_info(my_day_items)')}
             if 'notes' not in day_columns:
                 db.execute("ALTER TABLE my_day_items ADD COLUMN notes TEXT NOT NULL DEFAULT ''")
-            db.execute('PRAGMA user_version=7')
+            db.execute('PRAGMA user_version=8')
             self._workstream(db, UNCLASSIFIED, UNCLASSIFIED)
             db.commit()
 
@@ -356,6 +367,26 @@ class SQLiteStorage:
     def statistics(self, params, now):
         from .stats_store import DailyStatsStore
         return DailyStatsStore(self).history(params, now)
+
+    def followup_snapshot(self,now):
+        from .followup_store import FollowupStore
+        return FollowupStore(self).snapshot(now)
+
+    def followup_guidance(self,params,now):
+        from .followup_store import FollowupStore
+        return FollowupStore(self).guidance(params,now)
+
+    def followup_runs(self,params):
+        from .followup_store import FollowupStore
+        return FollowupStore(self).runs(params)
+
+    def save_followup_run(self,key,status,result,now,create=False):
+        from .followup_store import FollowupStore
+        return FollowupStore(self).save_run(key,status,result,now,create)
+
+    def recover_followup(self,now):
+        from .followup_store import FollowupStore
+        return FollowupStore(self).recover(now)
 
     def get_pr_sort(self):
         with self._connection(read=True) as db:

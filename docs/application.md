@@ -113,6 +113,20 @@ Missing, ambiguous, remote, changed, or unverified targets never trigger an arbi
 Native calls use argument arrays, regular-file capture, and a shared deadline shorter than the client timeout.
 The TUI only requests this operation. It does not inspect processes or control herdr directly.
 
+## Follow-up advice
+
+Schema 8 adds Task guidance and private analysis receipts. Existing tracking, hierarchy, plans, statistics, and external-action ledgers remain intact.
+The storage interface owns all SQL. `followup`, `followup_task`, and `followup_runs` expose local facts and guarded metadata, not a second client database.
+`followup_analyze` accepts a stable request key and scope. It queues a manual-only application job and returns immediately within the RPC timeout.
+The job permits at most three Gateway attempts and three bounded context reads. Failure and restart never cause an automatic paid replay.
+Queue acknowledgments, model results, interrupted work, and private usage receipts remain distinct.
+
+The gateway adapter owns a fixed HTTPS endpoint, redacted errors, masked key configuration, and owner-only private credentials.
+Initial context contains compact candidate facts. Approved deeper reads resolve only known Tasks, tracked PRs, and attached Slack threads.
+AI selects candidate identifiers, never shell text, arbitrary URLs, or executable actions. Current facts and scope gate reuse of cached interpretations.
+No new MCP tool or external mutation is added. Interactive chat and learned SOUL policies remain deferred.
+See [the Follow-up guide](followup.md) for current limits and configuration.
+
 ## My Day planning
 
 Schema 6 adds private day items and a separate idempotency ledger. Existing PRs, Tasks, references, statistics, and operation ledgers stay intact.

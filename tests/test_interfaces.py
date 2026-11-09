@@ -98,6 +98,25 @@ class InterfaceTests(unittest.TestCase):
         self.assertEqual(request(self.root,'day_targets',{'search':'Socket day outcome'})['total'],1)
         with self.assertRaises(ValueError): request(self.root,'day_intent',{**params,'shell':'anything'})
 
+    def test_followup_uses_real_socket_with_private_key_and_manual_only_analysis(self):
+        request(self.root,'intent',{'key':'advice-pr','kind':'register_pr','payload':{'url':PR}})
+        before=request(self.root,'get_pr',{'url':PR})
+        report=request(self.root,'followup')
+        self.assertEqual(len(report['candidates']),1)
+        task=report['candidates'][0]['task_id']
+        request(self.root,'followup_task',{'task_id':task,'expected_version':0,'next_action':'Clarify the review plan'})
+        self.assertEqual(request(self.root,'followup')['candidates'][0]['action'],'Clarify the review plan')
+        request(self.root,'followup_key',{'key':'synthetic-socket-value'})
+        self.assertEqual((self.root/'gateway.key').stat().st_mode&0o777,0o600)
+        self.assertNotIn('synthetic-socket-value',json.dumps(request(self.root,'followup')))
+        first=request(self.root,'followup_analyze',{'key':'manual-socket'})
+        self.assertEqual(first['status'],'queued')
+        self.assertTrue(request(self.root,'followup_analyze',{'key':'manual-socket'})['duplicate'])
+        self.assertEqual(request(self.root,'followup_runs',{'key':'manual-socket'})['status'],'queued')
+        self.assertEqual(request(self.root,'get_pr',{'url':PR}),before)
+        with self.assertRaises(ValueError):request(self.root,'followup_analyze',{'key':'manual-socket','shell':'ignored'})
+        with self.assertRaises(ValueError):request(self.root,'intent',{'key':'no-agent-advice','kind':'followup_analyze','payload':{}})
+
     def test_daily_statistics_are_readable_and_snapshot_jobs_belong_to_the_application(self):
         request(self.root,'intent',{'key':'stats-fixture','kind':'register_pr','payload':{'url':PR,'project':'Alpha'}})
         before=request(self.root,'get_pr',{'url':PR})
@@ -161,6 +180,9 @@ class InterfaceTests(unittest.TestCase):
                 self.assertNotIn('my_day', names)
                 self.assertNotIn('day_intent', names)
                 self.assertNotIn('day_targets', names)
+                self.assertNotIn('followup', names)
+                self.assertNotIn('followup_analyze', names)
+                self.assertNotIn('followup_key', names)
                 self.assertEqual(len(names), 8)
                 payload = {'url': PR, 'intent_key': 'from-agent', 'description': 'Why this matters'}
                 result = await client.call_tool('submit_pr', payload)

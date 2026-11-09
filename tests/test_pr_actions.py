@@ -99,7 +99,7 @@ class StateAgeTests(unittest.TestCase):
             self.assertIsNone(value['state_changed_at'])
             self.assertIsNone(value['state_first_seen_at'])
             with migrated._connection() as db:
-                self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 7)
+                self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 8)
 
 
 class FakeGitHub:

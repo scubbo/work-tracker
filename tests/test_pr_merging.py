@@ -186,7 +186,7 @@ class MergePRTests(unittest.TestCase):
         self.assertEqual(migrated.close_request('existing-close')['comment'], 'Keep this comment')
         self.assertEqual(migrated.get_pr_sort(), {'field': 'opened', 'descending': True})
         with migrated._connection(read=True) as db:
-            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 7)
+            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 8)
 
 
 if __name__ == '__main__':

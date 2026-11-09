@@ -102,7 +102,7 @@ def slack_url(value):
     return value
 
 
-def run_json(args):
+def run_json(args, *, timeout=180):
     command = args[0]
     config_path = Path(os.environ.get("XDG_CONFIG_HOME", str(Path.home() / ".config")))
     config = read_json(config_path / "work-activity/config.json", {})
@@ -115,7 +115,7 @@ def run_json(args):
         # Some CLIs exit before an asynchronous pipe write drains. A regular file
         # makes their stdout writes synchronous and keeps large exports intact.
         with tempfile.TemporaryFile() as output:
-            result = subprocess.run(args, stdout=output, stderr=subprocess.PIPE, timeout=180, env=env)
+            result = subprocess.run(args, stdout=output, stderr=subprocess.PIPE, timeout=timeout, env=env)
             output.seek(0)
             content = output.read()
     except (OSError, subprocess.TimeoutExpired) as error:

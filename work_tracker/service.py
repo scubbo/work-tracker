@@ -21,6 +21,7 @@ from .scheduler import Scheduler, next_daily, daily_schedule
 from .storage import SQLiteStorage, now_iso
 from .session_actions import SessionActions, references
 from .herdr_sessions import HerdrSessions, FIELDS
+from .followup import Followup, filters as followup_filters
 
 
 DEFAULT_CONFIG = {"archive_hour": 10, "archive_minute": 0, "refresh_seconds": 300, "automated_reviewers": []}
@@ -52,9 +53,10 @@ class Application:
         self.session_actions = SessionActions()
         self.herdr_sessions = HerdrSessions()
         activity.write_json(self.root/"application.json", {"version": 1})
+        self.followup = Followup(self.storage,self.root,self.clock,run=run)
         self.scheduler = Scheduler(self.storage, {"archive": self.archive, "refresh_prs": self.refresh_prs,
-                                                  "daily_stats": self.capture_statistics},
-                                   self.config, activity.read_json(self.root/"checkpoints.json", {}), self.clock)
+                                                  "daily_stats": self.capture_statistics,'followup':self.followup.analyze},
+                                   self.config, activity.read_json(self.root/"checkpoints.json", {}), self.clock,manual={'followup'})
 
     @staticmethod
     def _validate_config(config):
@@ -162,6 +164,32 @@ class Application:
                     "config": self.config, "prs": len(self.storage.list_prs(state=None)),
                     "jobs": self.storage.jobs(), "inventory": self.storage.inventory(), "github_writes": True,
                     "mcp_github_writes": False, "github_write_operations": ["confirmed_pr_close", "confirmed_pr_merge"]}
+        if method == 'followup':
+            return self.followup.read(params)
+        if method == 'followup_task':
+            return self.storage.followup_guidance(params,self.clock())
+        if method == 'followup_runs':
+            return self.storage.followup_runs(params)
+        if method == 'followup_key':
+            return self.followup.gateway.configure_key(params)
+        if method == 'followup_model':
+            return self.followup.gateway.configure_model(params)
+        if method == 'followup_analyze':
+            if 'key' not in params or not isinstance(params['key'],str) or not params['key'] or len(params['key'])>128:
+                raise ValueError('Analysis requires a stable key of 1 to 128 characters')
+            scope=followup_filters({name:value for name,value in params.items() if name!='key'})
+            with self.scheduler.lock,self.followup.lock:
+                old=self.storage.followup_runs({'key':params['key']})
+                if old:
+                    if old['result'].get('scope')!=scope:raise ValueError('Analysis key was used for a different scope')
+                    return {'key':old['key'],'status':old['status'],'duplicate':True}
+                if not self.followup.gateway.status()['configured']:
+                    raise ValueError('AI Gateway key missing. Run work-tracker follow-up key in a terminal. Local advice remains available.')
+                job=next(item for item in self.storage.jobs() if item['name']=='followup')
+                if job['status'] in ('running','queued'):raise ValueError('An analysis is already active. Read its status instead of submitting another.')
+                self.storage.save_followup_run(params['key'],'queued',{'scope':scope},self.clock(),create=True)
+                self.scheduler.queue('followup',{'key':params['key'],**scope})
+            return {'key':params['key'],'status':'queued','duplicate':False}
         if method == 'my_day':
             return self.storage.my_day(params, self.clock())
         if method == 'day_targets':

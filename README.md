@@ -221,6 +221,25 @@ Stale versions fail instead of overwriting another client's edits.
 My Day is available through the TUI and CLI only. No My Day MCP tool is exposed, and planning never writes to GitHub.
 Day plans stay in private application storage, not in Git or a separate TUI database.
 
+## Follow-up advice
+
+Press F5 from My Day or the PR list for What next and Through the cracks.
+The view gives direct advice or asks a clarification question when candidates compete. It does not invent a personal priority policy.
+Project/workstream filters narrow the scope. Stale signals identify unchanged review states, old PRs, and neglected planning, not proven human inactivity.
+Next steps edits Task-level next action, follow-on work, waiting-on context, dependencies, and a revisit date.
+
+Local advice works immediately without a key. To enable explicit, bounded AI analysis, configure a key in a masked terminal prompt:
+
+```sh
+work-tracker follow-up key
+work-tracker follow-up analyze --wait
+work-tracker follow-up --project Alpha --json
+```
+
+Opening or reloading the view never calls a model. AI analysis starts with compact facts and fetches more context only when requested.
+It permits at most three model attempts and three bounded context requests. No external actions or automatic learning are enabled.
+Read [the Follow-up guide](docs/followup.md) for private key storage, progressive disclosure, signal definitions, usage history, and deliberate limits.
+
 ## Daily PR statistics
 
 Press F3 in the TUI to view daily history. Choose Overall, all projects, or one project.

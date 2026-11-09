@@ -63,7 +63,7 @@ class PreferenceTests(unittest.TestCase):
         self.assertEqual(self.app.storage.jobs(), jobs)
         self.assertEqual((self.root/'prs.json').read_bytes(), mirror)
         with self.app.storage._connection(read=True) as db:
-            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 7)
+            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 8)
             self.assertEqual(db.execute("SELECT count(*) FROM settings WHERE key='tui_pr_sort'").fetchone()[0], 1)
             self.assertTrue(db.execute("SELECT 1 FROM settings WHERE key='legacy_imported'").fetchone())
 

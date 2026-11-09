@@ -57,6 +57,19 @@ A conflicting edit fails instead of overwriting another client. Reopen the form 
 If the calendar day changes, reopen an unsent old-day form. History is not silently rewritten.
 No planning action changes GitHub or closes the linked Task/workstream. My Day has no MCP tools in this version.
 
+## Follow-up advice
+
+F5 opens Follow-up from My Day or the PR list. What next gives one action or an explicit clarification question.
+Through the cracks shows attention signals with unknown-activity warnings. Neither tab performs the recommended action.
+Project/workstream filters and the 7/14/30-day selectors narrow the view. Its alphabetical rows are not a learned ranking.
+Choose Next steps to edit the selected Task's explicit guidance, dependencies, waiting-on context, and revisit date.
+Opening the editor does not change a PR or the daily plan. All text renders literally.
+
+Analyze AI explicitly queues bounded cloud processing. Opening, filtering, polling, and Reload never queue analysis.
+A missing key disables Analyze AI and shows the masked terminal setup command. Local advice remains available.
+History and token/context counters remain private. Unknown acknowledgments reuse the frozen request and do not authorize another paid run.
+See [the Follow-up guide](followup.md) for configuration, evidence limits, CLI commands, and privacy.
+
 ## Browse tracked work
 
 The table contains ingested open PRs only. All local pages are loaded before

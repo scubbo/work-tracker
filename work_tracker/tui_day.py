@@ -14,6 +14,7 @@ from textual.widgets import Button, DataTable, Footer, Static, TabbedContent, Ta
 from .tui_close import literal
 from .tui_day_forms import DayItemDetails, DayItemForm, DayPRPicker
 from .tui_stats import StatisticsScreen
+from .tui_followup import FollowupScreen
 
 
 TABLES = {'day-goals':'goals','day-awareness':'awareness','day-carry':'carry_candidates'}
@@ -23,7 +24,7 @@ class MyDayScreen(Screen):
     BINDINGS = [Binding('q','quit','Quit'),Binding('escape','prs','PR list'),Binding('f4','prs','PR list'),
                 Binding('a','add','Add goal'),Binding('w','watch','Watch'),Binding('space','toggle','Open/Done'),
                 Binding('e','edit','Edit'),Binding('enter','details','Details'),Binding('delete','remove','Remove'),Binding('c','carry','Carry'),
-                Binding('r','reload','Reload'),Binding('ctrl+r','retry','Retry request',show=False),Binding('f3','stats','Daily stats')]
+                Binding('r','reload','Reload'),Binding('ctrl+r','retry','Retry request',show=False),Binding('f3','stats','Daily stats'),Binding('f5','followup','Follow-up')]
     CSS = """
     MyDayScreen { background: $background; padding: 0 1; }
     MyDayScreen #day-heading { height: 1; text-style: bold; color: $accent; }
@@ -188,6 +189,7 @@ class MyDayScreen(Screen):
         self.app._layout()
     async def action_quit(self): await self.app.action_quit()
     def action_stats(self): self.app.push_screen(StatisticsScreen())
+    def action_followup(self): self.app.push_screen(FollowupScreen())
 
     def open_form(self,kind='goal',item=None):
         if self.data and self.data['editable'] and self.connected and not self.busy and not self.pending:

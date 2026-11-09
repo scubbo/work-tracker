@@ -285,3 +285,16 @@ A successful receipt opens and selects its exact goal. An uncertain response ret
 Midnight retries reveal the receipt's original day. Empty, offline, and pending states explain why no new action occurs.
 The full deterministic suite passed 303 tests with exit 0. Seven installed Carry regressions also passed against temporary state.
 The live 80-column button check used a read-only API guard. No real goal was carried, and live plans, notes, metadata, configuration, and backend PID stayed unchanged.
+
+## Follow-up advice MVP
+
+Jack approved a basic version before selecting a personal priority policy. Competing candidates and clarification questions are valid outcomes.
+Stored tracker facts, current GitHub reviews/comments, and explicitly linked Slack threads are approved as-needed inputs with progressive disclosure.
+Schema 8 adds Task guidance and private analysis receipts. F5 and the CLI expose local advice and stale signals, with explicit AI analysis.
+The backend owns a bounded manual job, stable request keys, secure Gateway credentials, and validated context adapters. Failed or interrupted analysis never replays automatically.
+The initial model context excludes full PR bodies, notes, Slack histories, paths, and sessions. Deeper bounded excerpts require explicit requests for known candidates.
+Actions remain tied to tracker candidates. No recommendation executes a merge, message, booking, Task closure, agent startup, or policy rewrite.
+The key was absent during development. Provider behavior is tested through deterministic transport fixtures, not a claimed live inference.
+The full regression command passed 329 tests with exit 0. Final checks passed 28 focused advice/UI tests and 11 socket/MCP tests after credential and selection hardening.
+The installed CLI, live read-only F5 flow at 80 columns, metadata read/cancel, module fingerprints, and private-data preservation checks passed.
+No live model call, external context fetch for prioritization, or real Task guidance edit was performed during installed verification.

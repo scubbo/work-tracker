@@ -30,6 +30,7 @@ from .clipboard import copy_macos
 from .tui_sort import COLUMN_LABELS, SORT_FIELDS, SortScreen, ordered_rows
 from .tui_sessions import SessionLinks, SessionsScreen
 from .tui_slack import SlackThreadScreen, slack_threads
+from .tui_followup import FollowupScreen
 from .preferences import DEFAULT_PR_SORT, validate_pr_sort
 
 
@@ -219,7 +220,7 @@ class WorkTrackerApp(App):
                 Binding('o', 'open_pr', 'Open PR', show=False), Binding('x', 'close_pr', 'Close PR'),
                 Binding('l', 'open_slack_thread', 'Slack thread'),
                 Binding('m', 'merge_pr', 'Merge PR'), Binding('f3', 'statistics', 'Daily stats'),
-                Binding('f4', 'my_day', 'My Day'), Binding('a', 'add_to_day', 'Plan PR'),
+                Binding('f4', 'my_day', 'My Day'), Binding('f5','followup','Follow-up'), Binding('a', 'add_to_day', 'Plan PR'),
                 Binding('p', 'copy_pr_link', 'Copy PR link'), Binding('f2', 'sort', 'Sort'),
                 Binding('c', 'clear_filters', 'Clear filters', show=False), Binding('escape', 'table', 'PR list', show=False)]
     CSS = """
@@ -643,7 +644,7 @@ class WorkTrackerApp(App):
             action()
 
     def check_action(self, action, parameters):
-        if len(self.screen_stack) > 1 and action in {'quit', 'search', 'refresh_prs', 'edit', 'register', 'slack', 'session', 'remove_slack', 'links', 'open_pr', 'open_slack_thread', 'clear_filters', 'table', 'close_pr', 'merge_pr', 'copy_pr_link', 'sort', 'statistics', 'my_day', 'add_to_day'}:
+        if len(self.screen_stack) > 1 and action in {'quit', 'search', 'refresh_prs', 'edit', 'register', 'slack', 'session', 'remove_slack', 'links', 'open_pr', 'open_slack_thread', 'clear_filters', 'table', 'close_pr', 'merge_pr', 'copy_pr_link', 'sort', 'statistics', 'my_day', 'followup', 'add_to_day'}:
             return False
         return True
 
@@ -737,6 +738,9 @@ class WorkTrackerApp(App):
         url = (self.inventory or {}).get('github_url')
         if url:
             self.open_reference(url, 'inventory')
+
+    def action_followup(self):
+        if len(self.screen_stack)==1:self.push_screen(FollowupScreen())
 
     def action_my_day(self):
         if len(self.screen_stack) == 1:

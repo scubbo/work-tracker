@@ -34,9 +34,10 @@ def daily_schedule(name, config):
 
 
 class Scheduler:
-    def __init__(self, storage, callbacks, config, checkpoints=None, clock=None):
+    def __init__(self, storage, callbacks, config, checkpoints=None, clock=None, manual=()):
         self.storage = storage
         self.callbacks = callbacks
+        self.manual = set(manual)
         self.config = config
         self.clock = clock or (lambda: datetime.now(timezone.utc))
         self.lock = threading.RLock()
@@ -51,11 +52,18 @@ class Scheduler:
         schedules = [("archive", daily_due), ("refresh_prs", activity.iso(now))]
         if 'daily_stats' in callbacks:
             schedules.append(('daily_stats', activity.iso(now)))
+        schedules.extend((name,activity.iso(now)) for name in sorted(self.manual))
         for name, due in schedules:
             if name not in jobs:
                 storage.save_job(name, {"status": "idle", "next_run": due, "attempts": 0, "parameters": {},
                                         "zone": zone_key(now),
                                         "last_finished": activity.iso(max(recent)) if name == "archive" and recent else None})
+            elif name in self.manual and jobs[name]['status'] in ('queued','running'):
+                value=dict(jobs[name]);value.pop('name')
+                seq=value.get('run_seq',0)+(value['status']=='queued')
+                value.update(status='idle',run_seq=seq,completed_seq=seq,parameters={},
+                             last_error='Explicit analysis interrupted; no automatic replay',last_result={'ok':False,'error':'Interrupted. Request a new analysis explicitly.'})
+                storage.save_job(name,value)
             elif jobs[name]["status"] == "running":
                 value = dict(jobs[name])
                 value.pop("name", None)
@@ -88,6 +96,8 @@ class Scheduler:
                 job = next(value for value in self.storage.jobs() if value["name"] == job["name"])
                 name = job.pop("name")
                 if name not in self.callbacks:
+                    continue
+                if name in self.manual and job['status']!='queued':
                     continue
                 daily = daily_schedule(name, self.config)
                 if daily and job["status"] == "idle" and not job.get("last_error") and job.get("zone") != zone_key(now):

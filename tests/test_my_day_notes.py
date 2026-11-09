@@ -131,7 +131,7 @@ class GoalNotesTests(unittest.TestCase):
         self.assertEqual(self.app.storage.jobs(),jobs)
         self.assertEqual(self.app.dispatch('catalog',{}),catalog)
         with self.app.storage._connection(read=True) as db:
-            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0],7)
+            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0],8)
         self.edit(item,notes='After migration')
         self.assertEqual(self.day()['goals'][0]['notes'],'After migration')
 

@@ -48,6 +48,10 @@ metrics.json
 my-day.json
 day-plan.json
 day.json
+followup.json
+followup-history.json
+followup-config.json
+task-followup.json
 
 # Local credentials and secret-scan reports.
 *.pem
