@@ -30,7 +30,12 @@ Use Previous and Next for read-only history. Today follows the current local dat
 Press `a` to add a goal or `w` to add persistent awareness. Quick text creates a Task.
 Optional Project and Workstream fields use Unclassified when blank. Right Arrow accepts known-name completion, and new names are allowed.
 Choose Existing Task or Existing workstream to search known targets. An optional label describes the daily outcome without renaming its target.
-Space changes only a daily goal's Open/Done state. `e` edits its label and, for a Task, its project/workstream assignment.
+Space changes only a daily goal's Open/Done state. `e` edits its label, optional Notes, and, for a Task, its project/workstream assignment.
+Notes are plain multiline text, up to 20,000 characters, with no Markdown interpretation or automatic commands.
+In Notes, Enter inserts a line and Ctrl+Enter saves. Empty text clears the notes. Label-only changes preserve notes.
+A goal with notes has a `[notes]` marker. Press Enter on an item for scrollable full details, including history and cached offline data.
+Notes belong to that daily goal, not the Task or workstream. Explicit carry copies them without changing the source day.
+Awareness items remain unchanged and do not have notes.
 Classification applies to the underlying Task wherever it is linked, including local PR metadata. Task titles, completion state, and GitHub stay unchanged.
 Linked existing targets inherit classification on add. Workstream items cannot move an entire workstream between projects through this form.
 Delete removes a goal from today's plan without deleting the Task.

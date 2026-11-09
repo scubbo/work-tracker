@@ -21,6 +21,12 @@ def text(value):
     return value.strip()
 
 
+def goal_notes(value):
+    if not isinstance(value,str) or len(value)>20000 or any(not char.isprintable() and char not in '\n\t' for char in value):
+        raise ValueError('Goal notes must be text up to 20000 characters without terminal control characters')
+    return value
+
+
 def today(now):
     if not isinstance(now, datetime) or now.tzinfo is None:
         raise ValueError('My Day requires an aware application clock')
@@ -112,7 +118,7 @@ class MyDayStore:
             candidates.sort(key=lambda value:(value['title'].casefold(),value['kind'],value['id']))
         return {'total':len(candidates),'items':candidates[offset:offset+limit],'limit':limit,'offset':offset}
 
-    def _add(self, db, day, kind, target_kind, target_id, label, stamp, carried_from=None):
+    def _add(self, db, day, kind, target_kind, target_id, label, stamp, carried_from=None, notes=''):
         target = self._target(db,target_kind,target_id)
         if kind == 'goal':
             old = db.execute("SELECT * FROM my_day_items WHERE kind='goal' AND day=? AND target_kind=? AND target_id=?",
@@ -123,7 +129,7 @@ class MyDayStore:
         if old is not None:
             if old['removed']:
                 db.execute('UPDATE my_day_items SET removed=0,version=version+1,updated_at=? WHERE id=?', (stamp,old['id']))
-            return old['id'], 'The item is already linked to this plan.'
+            return old['id'], 'The item is already linked to this plan. Existing label and notes were kept. Use Edit to change them.'
         count = db.execute('SELECT count(*) FROM my_day_items WHERE kind=? AND removed=0 AND '+
                            ("day=?" if kind=='goal' else 'dismissed_day IS NULL'),
                            (kind,day) if kind=='goal' else (kind,)).fetchone()[0]
@@ -131,9 +137,9 @@ class MyDayStore:
             raise ValueError('This view already has 500 active items')
         position = db.execute('SELECT coalesce(max(position),-1)+1 FROM my_day_items WHERE kind=?', (kind,)).fetchone()[0]
         identifier = uuid.uuid4().hex
-        db.execute('INSERT INTO my_day_items(id,kind,day,target_kind,target_id,label,done,removed,dismissed_day,position,version,created_at,updated_at,carried_from) '
-                   'VALUES(?,?,?,?,?,?,0,0,NULL,?,0,?,?,?)',
-                   (identifier,kind,day,target['kind'],target['id'],label or target['title'],position,stamp,stamp,carried_from))
+        db.execute('INSERT INTO my_day_items(id,kind,day,target_kind,target_id,label,done,removed,dismissed_day,position,version,created_at,updated_at,carried_from,notes) '
+                   'VALUES(?,?,?,?,?,?,0,0,NULL,?,0,?,?,?,?)',
+                   (identifier,kind,day,target['kind'],target['id'],label or target['title'],position,stamp,stamp,carried_from,notes))
         return identifier, 'Added to My Day.'
 
     @staticmethod
@@ -174,9 +180,9 @@ class MyDayStore:
         key, action, payload, source = (params[name] for name in ('key','action','payload','source'))
         if not isinstance(key,str) or not key or len(key)>200 or not isinstance(payload,dict) or not isinstance(source,dict):
             raise ValueError('Invalid My Day request key, payload, or source')
-        allowed = {'add':{'day','kind','text','target_kind','target_id','url','project','workstream'},
+        allowed = {'add':{'day','kind','text','target_kind','target_id','url','project','workstream','notes'},
                    'set_done':{'day','item_id','expected_version','done'},
-                   'edit':{'day','item_id','expected_version','text','project','workstream','expected_workstream_id'},
+                   'edit':{'day','item_id','expected_version','text','project','workstream','expected_workstream_id','notes'},
                    'remove':{'day','item_id','expected_version'},
                    'dismiss':{'day','item_id','expected_version'},
                    'carry':{'day','item_id','expected_version'}}
@@ -196,6 +202,9 @@ class MyDayStore:
                 kind, target_kind = payload.get('kind'), payload.get('target_kind','new')
                 if kind not in ('goal','awareness'):
                     raise ValueError('Choose a daily goal or persistent awareness item')
+                if 'notes' in payload and kind!='goal':
+                    raise ValueError('Notes belong to daily goals only')
+                notes = goal_notes(payload['notes']) if 'notes' in payload else ''
                 label = text(payload['text']) if payload.get('text') is not None else None
                 if target_kind == 'new':
                     if label is None or set(payload) & {'target_id','url'}:
@@ -217,7 +226,7 @@ class MyDayStore:
                         if not isinstance(payload.get('target_id'),str) or 'url' in payload:
                             raise ValueError('Select one Task or workstream ID')
                         target_id = payload['target_id']
-                identifier, message = self._add(db,current,kind,target_kind,target_id,label,stamp)
+                identifier, message = self._add(db,current,kind,target_kind,target_id,label,stamp,notes=notes)
             else:
                 row = db.execute('SELECT * FROM my_day_items WHERE id=?', (payload.get('item_id'),)).fetchone()
                 if row is None or row['removed']:
@@ -228,7 +237,7 @@ class MyDayStore:
                 if action=='carry':
                     if row['kind']!='goal' or row['day']>=current or row['done']:
                         raise ValueError('Only an unfinished goal from a prior day can be carried forward')
-                    identifier,message = self._add(db,current,'goal',row['target_kind'],row['target_id'],row['label'],stamp,row['id'])
+                    identifier,message = self._add(db,current,'goal',row['target_kind'],row['target_id'],row['label'],stamp,row['id'],notes=row['notes'])
                 else:
                     if row['kind']=='goal' and row['day']!=current or row['kind']=='awareness' and (row['day']>current or row['dismissed_day']):
                         raise ValueError('This item is historical or dismissed. Reload My Day.')
@@ -241,14 +250,17 @@ class MyDayStore:
                         message = 'Daily goal updated. Its Task and PRs were not changed.'
                     elif action=='edit':
                         assigning = bool(set(payload) & {'project','workstream'})
-                        if not assigning and ('text' not in payload or 'expected_workstream_id' in payload):
-                            raise ValueError('Provide a day label or explicit Task classification changes')
+                        if not assigning and (not set(payload)&{'text','notes'} or 'expected_workstream_id' in payload):
+                            raise ValueError('Provide a day label, goal notes, or explicit Task classification changes')
+                        if 'notes' in payload and row['kind']!='goal':
+                            raise ValueError('Notes belong to daily goals only')
+                        notes = goal_notes(payload['notes']) if 'notes' in payload else row['notes']
                         label = text(payload['text']) if 'text' in payload else row['label']
                         if assigning:
                             classification_changed = self._classify_task(db,row,payload)
-                        db.execute('UPDATE my_day_items SET label=?,version=version+1,updated_at=? WHERE id=?', (label,stamp,identifier))
+                        db.execute('UPDATE my_day_items SET label=?,notes=?,version=version+1,updated_at=? WHERE id=?', (label,notes,stamp,identifier))
                         message = ('Task project/workstream updated for every linked day item and PR. No GitHub state changed.' if classification_changed else
-                                   'Day label updated. The underlying Task or workstream was not renamed.')
+                                   'Day label or notes updated. The underlying Task or workstream was not renamed.')
                     elif action=='remove':
                         if row['kind']!='goal':
                             raise ValueError('Use dismiss for a persistent awareness item')

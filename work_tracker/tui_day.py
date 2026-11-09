@@ -12,7 +12,7 @@ from textual.screen import Screen
 from textual.widgets import Button, DataTable, Footer, Static, TabbedContent, TabPane
 
 from .tui_close import literal
-from .tui_day_forms import DayItemForm, DayPRPicker
+from .tui_day_forms import DayItemDetails, DayItemForm, DayPRPicker
 from .tui_stats import StatisticsScreen
 
 
@@ -22,7 +22,7 @@ TABLES = {'day-goals':'goals','day-awareness':'awareness','day-carry':'carry_can
 class MyDayScreen(Screen):
     BINDINGS = [Binding('q','quit','Quit'),Binding('escape','prs','PR list'),Binding('f4','prs','PR list'),
                 Binding('a','add','Add goal'),Binding('w','watch','Watch'),Binding('space','toggle','Open/Done'),
-                Binding('e','edit','Edit label'),Binding('delete','remove','Remove'),Binding('c','carry','Carry'),
+                Binding('e','edit','Edit'),Binding('enter','details','Details'),Binding('delete','remove','Remove'),Binding('c','carry','Carry'),
                 Binding('r','reload','Reload'),Binding('f3','stats','Daily stats')]
     CSS = """
     MyDayScreen { background: $background; padding: 0 1; }
@@ -108,7 +108,7 @@ class MyDayScreen(Screen):
                 for item in values:
                     target=item['target']
                     state=item['day'] if key=='carry_candidates' else ('Watching' if item['kind']=='awareness' else ('[x] Done' if item['done'] else '[ ] Open'))
-                    label=literal(item['label']).replace('\n',' ')[:160]
+                    label=literal(item['label']).replace('\n',' ')[:160]+(' [notes]' if item.get('notes') else '')
                     branch=literal(target['project_name']+' / '+target['workstream_name'])
                     table.add_row(Text(state),Text(label),Text(branch),str(target['pr_count']),key=item['id'])
                 selected=next((index for index,item in enumerate(values) if item['id']==previous),0)
@@ -127,6 +127,7 @@ class MyDayScreen(Screen):
         if item:
             target=item['target']
             detail=(literal(item['label'])+'\n'+literal(f"{target['kind']}: {target['title']} | {target['project_name']} / {target['workstream_name']}")+
+                    ('\nNotes (Enter for full text): '+literal(item['notes']).replace('\n',' ')[:140] if item.get('notes') else '')+
                     '\n'+('\n'.join(literal(pr['url']) for pr in target['prs'][:2]) or 'This Task has no PR. Its identity is retained across days.'))
         else:
             detail='No item selected. Add a daily goal, keep an awareness item, or explicitly carry an unfinished goal forward.'
@@ -159,6 +160,15 @@ class MyDayScreen(Screen):
     @on(TabbedContent.TabActivated,'#day-tabs')
     def tab_changed(self,event):
         if self.is_mounted: self.render_detail()
+
+    @on(DataTable.RowSelected)
+    def row_selected(self,event):
+        if event.data_table.id in TABLES: self.action_details()
+
+    def action_details(self):
+        item=self.selected_item()
+        if item and self.app.screen is self:
+            self.app.push_screen(DayItemDetails(item))
 
     def action_reload(self): self.load_day()
     def action_prs(self):

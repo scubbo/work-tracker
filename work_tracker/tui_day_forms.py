@@ -8,7 +8,7 @@ from textual import on, work
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.screen import ModalScreen
-from textual.widgets import Button, Input, Label, Select, Static
+from textual.widgets import Button, Input, Label, Select, Static, TextArea
 from textual.suggester import SuggestionReady
 
 from .tui_close import literal
@@ -23,6 +23,7 @@ class DayItemForm(ModalScreen[dict | None]):
         padding: 1 2; border: round $accent; background: $surface; }
     DayItemForm Static { height: auto; margin-bottom: 1; }
     DayItemForm #day-form-fields { height: 1fr; }
+    DayItemForm #day-notes { height: 7; min-height: 3; }
     DayItemForm #day-target-search { height: 3; }
     DayItemForm #day-target-query { width: 1fr; }
     DayItemForm #day-target-find { width: 12; }
@@ -35,6 +36,7 @@ class DayItemForm(ModalScreen[dict | None]):
         super().__init__()
         self.kind, self.day, self.pr_url = kind, day, pr_url
         self.item = deepcopy(item)
+        self.is_goal = (self.item or {}).get('kind',kind)=='goal'
         self.key = uuid.uuid4().hex
         self.pending = None
         self.busy = False
@@ -52,6 +54,10 @@ class DayItemForm(ModalScreen[dict | None]):
                 yield Static('Quick text creates a Task. Project and workstream are optional. '
                              'A day label never renames or closes its target. Task classification applies to every linked day item and PR.',markup=False)
                 yield Input(value=self.item['label'] if self.item else '',placeholder='Goal text or an optional label for an existing target',max_length=2000,id='day-label')
+                if self.is_goal:
+                    yield Label('Notes (optional, up to 20,000 characters)')
+                    yield TextArea((self.item or {}).get('notes',''),soft_wrap=True,id='day-notes')
+                    yield Static('Notes belong only to this daily goal. Enter adds a line. Ctrl+Enter saves.',markup=False)
                 options=[('New Task from text','new'),('Existing Task','task'),('Existing workstream','workstream')]
                 if self.pr_url: options.append(('Selected tracked PR Task','pr'))
                 yield Select(options,value='pr' if self.pr_url else 'new',allow_blank=False,id='day-target-kind',disabled=bool(self.item or self.pr_url))
@@ -204,6 +210,12 @@ class DayItemForm(ModalScreen[dict | None]):
                         self.query_one('#day-form-message',Static).update('Choose a Task or workstream first.')
                         return
                     payload['target_id']=target
+            if self.is_goal:
+                notes=self.query_one('#day-notes',TextArea).text
+                if len(notes)>20000:
+                    self.query_one('#day-form-message',Static).update('Notes exceed 20,000 characters. Shorten them before saving.')
+                    return
+                if notes!=(self.item or {}).get('notes',''): payload['notes']=notes
             if self.classification_enabled():
                 project=canonical_name(self.query_one('#day-project',Input).value.strip() or 'Unclassified',self.project_choices)
                 workstream=canonical_name(self.query_one('#day-workstream',Input).value.strip() or 'Unclassified',self.workstreams_for(project))
@@ -211,11 +223,11 @@ class DayItemForm(ModalScreen[dict | None]):
                 if (project,workstream)!=(previous['project_name'],previous['workstream_name']):
                     payload.update(project=project,workstream=workstream)
                     if self.item: payload['expected_workstream_id']=previous['workstream_id']
-            if self.item and not set(payload)&{'text','project','workstream'}:
-                self.query_one('#day-form-message',Static).update('There are no label or Task classification changes to save.')
+            if self.item and not set(payload)&{'text','notes','project','workstream'}:
+                self.query_one('#day-form-message',Static).update('There are no label, notes, or Task classification changes to save.')
                 return
             self.pending={'key':self.key,'action':action,'payload':payload,'source':{'client':'tui'}}
-            for widget in [*self.query(Input),*self.query(Select)]: widget.disabled=True
+            for widget in [*self.query(Input),*self.query(Select),*self.query(TextArea)]: widget.disabled=True
         self.busy=True
         self.query_one('#day-form-save',Button).disabled=True
         self.query_one('#day-form-cancel',Button).disabled=True
@@ -245,6 +257,40 @@ class DayItemForm(ModalScreen[dict | None]):
         if event.button.id=='day-form-save': self.action_save()
         elif event.button.id=='day-form-cancel': self.action_cancel()
         elif event.button.id=='day-target-find': self.find_targets()
+
+
+class DayItemDetails(ModalScreen):
+    BINDINGS=[Binding('escape','close','Back')]
+    CSS='''
+    DayItemDetails { align: center middle; background: $background 75%; }
+    DayItemDetails > Vertical { width: 88; max-width: 96%; height: 90%; padding: 1 2;
+        border: round $accent; background: $surface; }
+    DayItemDetails VerticalScroll { height: 1fr; }
+    DayItemDetails Static { height: auto; margin-bottom: 1; }
+    DayItemDetails Button { height: 3; }
+    '''
+
+    def __init__(self,item):
+        super().__init__()
+        self.item=deepcopy(item)
+
+    def compose(self):
+        item=self.item;target=item['target']
+        with Vertical():
+            with VerticalScroll():
+                yield Static(('Daily goal ' if item['kind']=='goal' else 'Awareness ')+item['day'],markup=False)
+                yield Static(literal(item['label']),markup=False)
+                yield Static(literal(f"{target['kind']}: {target['title']} | {target['project_name']} / {target['workstream_name']}"),markup=False)
+                if item['kind']=='goal':
+                    yield Static('Notes',markup=False)
+                    yield Static(literal((item.get('notes') or 'No notes for this daily goal.').expandtabs(4)),id='day-notes-full',markup=False)
+            yield Button('Back',id='day-details-back')
+
+    def action_close(self): self.dismiss()
+
+    @on(Button.Pressed,'#day-details-back')
+    def back(self,event):
+        event.stop();self.action_close()
 
 
 class DayPRPicker(ModalScreen[str | None]):

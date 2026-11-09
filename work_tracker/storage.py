@@ -62,7 +62,7 @@ class SQLiteStorage:
         self.path.parent.chmod(0o700)
         with self._connection() as db:
             version = db.execute("PRAGMA user_version").fetchone()[0]
-            if version not in (0, 1, 2, 3, 4, 5, 6):
+            if version not in (0, 1, 2, 3, 4, 5, 6, 7):
                 raise ValueError(f"Unsupported database schema {version}; refusing to change it")
             db.execute("PRAGMA journal_mode=WAL")
             db.executescript("""
@@ -130,7 +130,10 @@ class SQLiteStorage:
                                      ('observation_version', 'INTEGER NOT NULL DEFAULT 0')):
                 if name not in columns:
                     db.execute(f'ALTER TABLE prs ADD COLUMN {name} {definition}')
-            db.execute('PRAGMA user_version=6')
+            day_columns = {row[1] for row in db.execute('PRAGMA table_info(my_day_items)')}
+            if 'notes' not in day_columns:
+                db.execute("ALTER TABLE my_day_items ADD COLUMN notes TEXT NOT NULL DEFAULT ''")
+            db.execute('PRAGMA user_version=7')
             self._workstream(db, UNCLASSIFIED, UNCLASSIFIED)
             db.commit()
 

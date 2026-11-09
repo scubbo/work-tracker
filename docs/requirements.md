@@ -164,6 +164,9 @@ copying them automatically. Completing a goal affects only that day's item,
 not its linked task or workstream.
 
 Jack selected My Day as the TUI's home view. Daily goals use Open/Done, not an additional progress workflow.
+Jack selected per-goal multiline notes rather than day-wide notes, multiline labels, or goals without Tasks.
+Keep the label and target link unchanged. Notes belong to the daily item and preserve paragraph breaks and indentation.
+Explicit carry copies notes to the new day. Later edits must not change previous days or another goal for the same target.
 The first implementation exposes My Day through the TUI and CLI only. Do not add My Day MCP tools.
 Keep the PR list available as a separate view, and provide a shortcut to add its selected PR's Task to today.
 

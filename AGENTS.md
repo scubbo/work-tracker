@@ -21,6 +21,9 @@ explicit carry-forward. Quick-add defaults to Unclassified but accepts explicit
 project/workstream assignment. My Day Edit can reassign a Task globally, with
 item-version and expected-workstream preconditions. Keep linked PR metadata and
 current stats consistent without changing GitHub or past snapshot grouping.
+Daily goals have optional multiline notes, separate from the label and linked target.
+Notes belong to the day item. Explicit carry copies them without sharing later edits.
+Keep notes plain text, version-guarded, and private. Preserve them on label-only edits.
 Completing a day item must not close its Task, workstream, or PR. Past goal history is read-only.
 My Day is available through the TUI and CLI only, not MCP. Keep the PR list
 available through F4 and allow its selected PR Task to be added with `a`.

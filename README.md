@@ -184,6 +184,10 @@ Add a goal with `a`, add awareness with `w`, and use Space to switch a goal betw
 Quick text creates a Task with optional Project and Workstream fields. Blank names default to Unclassified.
 The fields suggest known names, accept Right Arrow completion, and allow new names. Existing Tasks and workstreams are searchable targets.
 A day label can describe a specific outcome without renaming its underlying Task or workstream.
+Each daily goal also has optional multiline Notes, up to 20,000 characters. Notes belong to the day item, not the linked target.
+Press `e` to edit notes. Enter inserts a line in the notes editor, and Ctrl+Enter saves.
+Press Enter on a goal to read its full notes, including read-only history. Explicit carry-forward copies notes into the new day.
+Later edits do not change the source day's notes. Awareness items do not have this field.
 In Edit, a Task's Project and Workstream can also be reassigned. Classification belongs to the Task, not only that day entry.
 Every linked day item and PR sees the new local classification. Task completion, GitHub state, and past statistics grouping stay unchanged.
 Linking an existing target inherits its classification. Workstream goals inherit their project and cannot reparent the whole workstream through this form.
@@ -202,6 +206,7 @@ Midnight invalidates unsent old-day edits rather than assigning them silently to
 ~/.local/bin/work-tracker day targets --search 'review'
 ~/.local/bin/work-tracker day add --pr https://github.com/owner/repo/pull/123 --key plan-pr
 ~/.local/bin/work-tracker day classify ITEM_ID --project Alpha --workstream Review --key assign-task
+~/.local/bin/work-tracker day edit ITEM_ID --notes 'Next step and useful context' --key goal-notes
 ~/.local/bin/work-tracker day done ITEM_ID --key complete-goal
 ~/.local/bin/work-tracker day --date 2026-11-05 --json
 ```

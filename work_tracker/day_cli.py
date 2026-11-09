@@ -18,6 +18,7 @@ def configure(commands):
     targets.add_argument('--offset', type=int, default=0)
     add = operations.add_parser('add', help='Quick-add a Task or link a known Task, workstream, or tracked PR')
     add.add_argument('text', nargs='?', help='Text for a new Task or an optional daily label for an existing target')
+    add.add_argument('--notes',help='Optional multiline notes for a new daily goal')
     add.add_argument('--awareness', action='store_true', help='Keep watching this item until it is explicitly dismissed')
     add.add_argument('--in-project','--project',dest='task_project',help='Project for a new Task; blank uses Unclassified')
     add.add_argument('--in-workstream',dest='task_workstream',help='Workstream for a new Task; requires --in-project')
@@ -35,7 +36,9 @@ def configure(commands):
         operation = operations.add_parser(action, help=help_text)
         operation.add_argument('item_id')
         operation.add_argument('--version', type=int, help='Expected item version; otherwise use the currently displayed version')
-        if action=='edit': operation.add_argument('text',nargs='?')
+        if action=='edit':
+            operation.add_argument('text',nargs='?')
+            operation.add_argument('--notes',help='Replace this daily goal\'s notes; empty text clears them')
         if action in ('edit','classify'):
             operation.add_argument('--in-project','--project',dest='task_project')
             operation.add_argument('--in-workstream','--workstream',dest='task_workstream')
@@ -63,9 +66,13 @@ def run(root, args, rpc):
                 target = item['target']
                 print(safe(f"{state} {item['label']} | {target['project_name']} / {target['workstream_name']} | "
                            f"id={item['id']} version={item['version']} source-day={item['day']}"))
+                if item.get('notes'):
+                    print('    Notes:')
+                    for line in item['notes'].split('\n'): print('    '+safe(line))
         return None
     key = args.key or uuid.uuid4().hex
     payload = {'day':view['today'] if action=='carry' else view['day']}
+    if action in ('add','edit') and args.notes is not None: payload['notes']=args.notes
     if action=='add':
         payload['kind'] = 'awareness' if args.awareness else 'goal'
         payload['target_kind'] = 'pr' if args.pr else ('workstream' if args.workstream else ('task' if args.task else 'new'))

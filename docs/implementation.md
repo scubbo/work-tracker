@@ -263,3 +263,15 @@ Cached references remain usable offline. URL validation and opener failure check
 No new metadata field or schema migration is needed. The action does not read or post Slack messages or invent an app URI.
 The full deterministic suite passed 280 tests with exit 0, including nine added metadata and shortcut regressions.
 Installed button and key checks passed with a captured opener. Live metadata, links, plan, schedule, sorting, and backend PID stayed unchanged.
+
+## Daily goal notes
+
+Jack selected per-goal multiline notes, separate from day-wide notes and the existing goal label.
+Schema 7 adds private notes with an empty default for existing items. Notes do not change Task titles, classification, completion, or linked PRs.
+The add/edit forms include a plain text editor. Enter adds a line, Ctrl+Enter saves, and Enter on a goal opens scrollable details.
+CLI add/edit accepts `--notes`, and local history retains previous notes. Explicit carry copies text without sharing future edits.
+Existing version and retry-key rules protect notes-only writes. Repeated target addition preserves the existing goal's notes.
+Synthetic tests cover persistence, schema migration, whitespace, invalid input, conflict rejection, safe retries, CLI, UI, and the real application socket.
+The complete deterministic suite passed 296 tests with exit 0. Live plans are not seeded with verification goals.
+Installed CLI and TUI writes passed through the real socket in temporary storage, including a service restart and an 80-column view.
+The live schema migration preserved sampled plans/history, metadata, links, classification, scheduling, and sorting.

@@ -116,6 +116,14 @@ The TUI only requests this operation. It does not inspect processes or control h
 ## My Day planning
 
 Schema 6 adds private day items and a separate idempotency ledger. Existing PRs, Tasks, references, statistics, and operation ledgers stay intact.
+Schema 7 adds a non-null `notes` column to day items. Existing items get empty notes without changes to versions, labels, targets, or receipts.
+Only goals accept notes through `add` or `edit`. Omitted notes preserve existing text. An empty string clears it.
+Notes accept up to 20,000 characters, including newlines and tabs. Invalid types, terminal controls, and excessive length fail atomically.
+Notes-only edits use the existing item-version and retry-key checks. They never change classification, target titles, PRs, or completion.
+Carry copies notes into the new daily item. Repeated target addition keeps existing notes rather than silently replacing them.
+The TUI renders notes as literal text, with a multiline editor and scrollable read-only details for history.
+CLI `day add` and `day edit` accept `--notes`. Local JSON reads retain exact text, and normal output shows each line safely.
+The field remains in private application storage. No new MCP tools or public data files are added.
 The private `my_day` read accepts an optional local calendar date. `day_targets` searches existing Tasks and workstreams with cached PR links.
 `day_intent` accepts explicitly validated local planning actions with a stable key, complete payload, and source metadata.
 These operations are not MCP tools. The CLI and TUI call the application rather than opening SQLite.
