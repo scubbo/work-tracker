@@ -23,6 +23,8 @@ item-version and expected-workstream preconditions. Keep linked PR metadata and
 current stats consistent without changing GitHub or past snapshot grouping.
 Daily goals have optional multiline notes, separate from the label and linked target.
 Notes belong to the day item. Explicit carry copies them without sharing later edits.
+Carry from Goals/history opens today's eligible list without a write. Only an explicit
+candidate action carries it. Reveal and select the receipt's goal after success or retry.
 Keep notes plain text, version-guarded, and private. Preserve them on label-only edits.
 Completing a day item must not close its Task, workstream, or PR. Past goal history is read-only.
 My Day is available through the TUI and CLI only, not MCP. Keep the PR list

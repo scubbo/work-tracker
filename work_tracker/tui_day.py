@@ -23,7 +23,7 @@ class MyDayScreen(Screen):
     BINDINGS = [Binding('q','quit','Quit'),Binding('escape','prs','PR list'),Binding('f4','prs','PR list'),
                 Binding('a','add','Add goal'),Binding('w','watch','Watch'),Binding('space','toggle','Open/Done'),
                 Binding('e','edit','Edit'),Binding('enter','details','Details'),Binding('delete','remove','Remove'),Binding('c','carry','Carry'),
-                Binding('r','reload','Reload'),Binding('f3','stats','Daily stats')]
+                Binding('r','reload','Reload'),Binding('ctrl+r','retry','Retry request',show=False),Binding('f3','stats','Daily stats')]
     CSS = """
     MyDayScreen { background: $background; padding: 0 1; }
     MyDayScreen #day-heading { height: 1; text-style: bold; color: $accent; }
@@ -44,6 +44,7 @@ class MyDayScreen(Screen):
         self.connected = False
         self.busy = False
         self.pending = None
+        self.reveal_carry = None
         self.selected = {}
 
     def compose(self):
@@ -95,6 +96,10 @@ class MyDayScreen(Screen):
         try:
             value=await self.app.call_api('my_day',{'day':requested} if requested else {})
             if not self.is_mounted or self not in self.app.screen_stack or requested!=self.fixed_day: return
+            revealing=self.reveal_carry and self.reveal_carry['day']==value['day']
+            if revealing:
+                self.selected['day-goals']=self.reveal_carry['item_id']
+                self.fixed_day=None if value['editable'] else value['day']
             self.data=value
             self.connected=True
             self.query_one('#day-heading',Static).update('My Day '+value['day']+('' if value['editable'] else ' · read-only history'))
@@ -114,6 +119,10 @@ class MyDayScreen(Screen):
                 selected=next((index for index,item in enumerate(values) if item['id']==previous),0)
                 self.selected[identifier]=values[selected]['id'] if values else None
                 if values: table.move_cursor(row=selected,animate=False,scroll=False)
+            if revealing:
+                self.reveal_carry=None
+                self.query_one('#day-tabs',TabbedContent).active='day-goals-pane'
+                if self.app.screen is self: self.query_one('#day-goals',DataTable).focus()
             self.render_detail()
         except Exception:
             self.connected=False
@@ -130,7 +139,8 @@ class MyDayScreen(Screen):
                     ('\nNotes (Enter for full text): '+literal(item['notes']).replace('\n',' ')[:140] if item.get('notes') else '')+
                     '\n'+('\n'.join(literal(pr['url']) for pr in target['prs'][:2]) or 'This Task has no PR. Its identity is retained across days.'))
         else:
-            detail='No item selected. Add a daily goal, keep an awareness item, or explicitly carry an unfinished goal forward.'
+            detail=('No unfinished previous goals are available to carry into today.' if self.active_table()=='day-carry' else
+                    'No item selected. Add a daily goal, keep an awareness item, or use Carry to choose a previous goal.')
         self.query_one('#day-detail',Static).update(detail)
         if self.connected and not self.pending:
             self.query_one('#day-status',Static).update('Open/Done affects only this day. Awareness persists until dismissed. Past goals and underlying Tasks stay unchanged.')
@@ -146,7 +156,9 @@ class MyDayScreen(Screen):
         for identifier in ('day-edit','day-remove'):
             self.query_one('#'+identifier,Button).disabled=not(editable and item and not carrying)
         self.query_one('#day-toggle',Button).disabled=not(editable and item and item['kind']=='goal' and not carrying)
-        self.query_one('#day-carry-action',Button).disabled=not(editable and item and carrying)
+        carry=self.query_one('#day-carry-action',Button)
+        carry.disabled=not(self.data and self.connected and not self.busy and not self.pending)
+        carry.tooltip='Add the selected prior goal to today' if carrying else 'Choose an unfinished previous goal to carry into today'
         self.query_one('#day-remove',Button).label='Dismiss' if item and item['kind']=='awareness' else 'Remove'
         self.query_one('#day-links',Button).disabled=not(item and item['target']['prs'])
         self.query_one('#day-retry',Button).disabled=not(self.pending and not self.busy)
@@ -206,9 +218,27 @@ class MyDayScreen(Screen):
             self.mutate('dismiss' if item['kind']=='awareness' else 'remove',{'item_id':item['id'],'expected_version':item['version']})
 
     def action_carry(self):
+        if not self.data or not self.connected:
+            self.app.notify('Reconnect to the application before carrying a goal.',severity='warning',markup=False)
+            return
+        if self.pending or self.busy:
+            self.app.notify('Finish or retry the pending request before carrying another goal.',severity='warning',markup=False)
+            return
         item=self.selected_item()
-        if item and self.active_table()=='day-carry':
-            self.mutate('carry',{'item_id':item['id'],'expected_version':item['version']})
+        if self.active_table()=='day-carry' and self.data['editable']:
+            if item:
+                self.mutate('carry',{'item_id':item['id'],'expected_version':item['version']})
+            else:
+                self.app.notify('No unfinished previous goals are available to carry into today.',markup=False)
+            return
+        if item and item['kind']=='goal' and item['day']<self.data['today']:
+            self.selected['day-carry']=item['id']
+        self.fixed_day=None
+        self.query_one('#day-tabs',TabbedContent).active='day-carry-pane'
+        self.query_one('#day-carry',DataTable).focus()
+        self.load_day()
+
+    def action_retry(self): self.retry()
 
     def retry(self):
         if self.pending and not self.busy:
@@ -219,10 +249,16 @@ class MyDayScreen(Screen):
     @work(group='my-day-write',exit_on_error=False)
     async def send(self):
         try:
-            value=await self.app.call_api('day_intent',deepcopy(self.pending))
+            pending=deepcopy(self.pending)
+            value=await self.app.call_api('day_intent',pending)
             self.pending=None
             if self.is_mounted:
-                self.app.notify(literal(value['message']),markup=False)
+                if pending['action']=='carry':
+                    self.reveal_carry={'day':value['day'],'item_id':value['item_id']}
+                    self.fixed_day=value['day']
+                    self.app.notify('Carry complete. '+literal(value['message'])+' Showing Goals for '+value['day']+'.',markup=False)
+                else:
+                    self.app.notify(literal(value['message']),markup=False)
                 self.load_day()
         except ValueError as exc:
             self.pending=None
@@ -231,13 +267,14 @@ class MyDayScreen(Screen):
                 self.load_day()
         except Exception:
             if self.is_mounted:
-                self.query_one('#day-status',Static).update('Response unavailable. Retry sends the same key and payload. Review the outcome before another change.')
+                self.query_one('#day-status',Static).update('Response unavailable. Retry or Ctrl+R sends the same key and payload. Review the outcome before another change.')
         finally:
             self.busy=False
             if self.is_mounted: self.update_buttons()
 
     def change_day(self,delta=0):
         if not self.data: return
+        self.reveal_carry=None
         self.fixed_day=(date.fromisoformat(self.data['day'])+timedelta(days=delta)).isoformat() if delta else None
         self.load_day()
 

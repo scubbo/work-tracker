@@ -193,7 +193,10 @@ Every linked day item and PR sees the new local classification. Task completion,
 Linking an existing target inherits its classification. Workstream goals inherit their project and cannot reparent the whole workstream through this form.
 Completion affects only that day's item. It never closes a Task, workstream, or PR.
 
-Awareness persists until explicitly dismissed. In the Carry forward tab, choose an unfinished prior goal and press `c`.
+Awareness persists until explicitly dismissed. From Goals, press `c` or click Carry to open the Carry forward choices.
+Select an unfinished prior goal, then press `c` or click Carry again to add it to today.
+Success opens Goals and selects the added entry. Opening the chooser never adds anything by itself.
+From history, Carry opens today's eligible choices without changing the previous day.
 The application creates a new daily item linked to the same target, without modifying the source day or copying anything automatically.
 After a carried goal is completed, its older unfinished ancestors are not suggested again.
 Previous and Next browse read-only history. Today returns to the application's current local calendar day.
@@ -213,7 +216,8 @@ Midnight invalidates unsent old-day edits rather than assigning them silently to
 
 CLI output includes item IDs and versions. Use `reopen`, `edit`, `classify`, `remove`, `dismiss`, or `carry` for explicit local changes.
 On `add`, `--workstream ID` still links an existing workstream goal. Use `--in-workstream NAME` to classify a new Task instead.
-Reuse the same key and payload after an uncertain response. Stale versions fail instead of overwriting another client's edits.
+Reuse the same key and payload after an uncertain response. In My Day, Retry or Ctrl+R repeats the pending request safely.
+Stale versions fail instead of overwriting another client's edits.
 My Day is available through the TUI and CLI only. No My Day MCP tool is exposed, and planning never writes to GitHub.
 Day plans stay in private application storage, not in Git or a separate TUI database.
 

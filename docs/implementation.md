@@ -275,3 +275,13 @@ Synthetic tests cover persistence, schema migration, whitespace, invalid input, 
 The complete deterministic suite passed 296 tests with exit 0. Live plans are not seeded with verification goals.
 Installed CLI and TUI writes passed through the real socket in temporary storage, including a service restart and an 80-column view.
 The live schema migration preserved sampled plans/history, metadata, links, classification, scheduling, and sorting.
+
+## Carry navigation repair
+
+The old button was disabled outside Carry forward, and the shortcut silently returned from Goals.
+Successful carries left the interface on the source tab rather than revealing the resulting daily goal.
+Carry now opens today's eligible choices from Goals or history without a write. A separate explicit candidate action submits the carry.
+A successful receipt opens and selects its exact goal. An uncertain response retains its key and can be retried with Ctrl+R.
+Midnight retries reveal the receipt's original day. Empty, offline, and pending states explain why no new action occurs.
+The full deterministic suite passed 303 tests with exit 0. Seven installed Carry regressions also passed against temporary state.
+The live 80-column button check used a read-only API guard. No real goal was carried, and live plans, notes, metadata, configuration, and backend PID stayed unchanged.

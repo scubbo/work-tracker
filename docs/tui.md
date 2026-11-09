@@ -41,7 +41,11 @@ Linked existing targets inherit classification on add. Workstream items cannot m
 Delete removes a goal from today's plan without deleting the Task.
 For awareness, Delete dismisses the persistent watch item. It stays visible on later days until dismissed.
 
-Carry forward never runs automatically. Select a candidate in that tab and press `c` to create today's linked item.
+Carry forward never runs automatically. Press `c` or click Carry from Goals to open the Carry forward choices.
+From history, this control returns to today's eligible choices without changing history. Select a candidate, then press `c` or click Carry to add it.
+After success, the interface opens Goals and selects the exact new entry. An empty list explains that no prior goals are eligible.
+Retry or Ctrl+R repeats an uncertain request with its original key. It does not add another copy.
+A retry after midnight reveals the receipt's original day as read-only history rather than hiding the committed goal.
 The source day remains unchanged. Suggestions use the latest prior goal for each target, so completing a carried item does not revive older ancestors.
 Linked PRs opens a picker of cached references and then full tracker details. A Task without a PR remains a valid target.
 The picker shows up to the first 50 cached PR links for a target. Workstream classification links return to the filtered PR list.
